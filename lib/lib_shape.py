@@ -161,8 +161,8 @@ def rotation_3d_2(theta,order='re'):
     M: torch.tensor shape (3,3) float 
     """
         
-    cos_x,cos_y,cos_z=torch.cos(theta)
-    sin_x,sin_y,sin_z=torch.sin(theta)
+    cos_x,cos_y,cos_z=np.cos(theta)
+    sin_x,sin_y,sin_z=np.sin(theta)
 
     if order=='re':
         M=rotation_re(cos_x,sin_x,cos_y,sin_y,cos_z,sin_z)
@@ -190,7 +190,7 @@ def rotation_re(theta):
     """
     cos_x,cos_y,cos_z=np.cos(theta)
     sin_x,sin_y,sin_z=np.sin(theta)
-    M=torch.zeros((3,3),dtype=torch.float64)
+    M=np.zeros((3,3),dtype=np.float64)
     M[0,0]=cos_y*cos_z
     M[0,1]=-cos_y*sin_z
     M[0,2]=sin_y
@@ -223,7 +223,7 @@ def rotation_in(theta):
     cos_x,cos_y,cos_z=np.cos(theta)
     sin_x,sin_y,sin_z=np.sin(theta)
     
-    M=torch.zeros((3,3))
+    M=np.zeros((3,3))
     M[0,0]=cos_y*cos_z
     M[0,1]=-cos_x*sin_z+sin_x*sin_y*cos_z
     M[0,2]=sin_x*sin_z+cos_x*sin_y*cos_z
