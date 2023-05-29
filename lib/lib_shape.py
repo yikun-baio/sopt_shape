@@ -935,7 +935,7 @@ def TPS_recover_parameter_cuda(Phi_T,X_bar,Y,epsilon):
     R=R0[0:d,:]
     Q1_c,Q2_c,R_c,M_c,Y_c=cp.array(Q1),cp.array(Q2),cp.array(R),cp.array(M),cp.array(Y)
     alpha=Q2_c.dot(cp.linalg.inv(Q2_c.T.dot(M_c).dot(Q2_c))).dot(Q2_c.T).dot(Y_c)
-    B=np.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha_c))
+    B=np.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha))
     return cp.asnumpy(alpha),cp.asnumpy(B)
 
 
@@ -1207,7 +1207,7 @@ def sopt_TPS(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80
         Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
         Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
         obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
-        L=piRow.astype(np.int64)
+
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
 
@@ -1287,7 +1287,7 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
         Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
         Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
         obj,phi,psi,piRow,piCol=solve(Y_hat_s,Y_s,Lambda)
-        L=piRow.copy()
+        L=piRow.astype(np.int64)
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
 
