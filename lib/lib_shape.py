@@ -9,11 +9,12 @@ import os
 import sys
 import cupy as cp
 
+from .opt1d import solve 
 from .library import *
 from .lib_ot import *   
 from .sliced_opt import *
 from scipy import linalg
-import opt1d
+
 
 #print('hello')
 import matplotlib.pyplot as plt
@@ -1086,7 +1087,7 @@ def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,
 
 
 
-def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,200,400,500,700,900]):
+def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, eps=1e-4, record_index=[0,20,100,200,400,500,700,900]):
     N1,D=X.shape
     C=X.copy()
     Phi=kernel_matrix_Gaussian(C,X,sigma2) 
@@ -1121,8 +1122,8 @@ def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20
         Y_indice=Y_theta.argsort()
         Y_hat_s=Y_hat_theta[Y_hat_indice]
         Y_s=Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=opt1d.solve(Y_hat_s,Y_s,Lambda)
-        L=piRow.copy()
+        obj,phi,psi,piRow,piCol=solve(Y_hat_s,Y_s,Lambda)
+        L=piRow.astype(np.int64)
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
 
@@ -1139,7 +1140,7 @@ def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20
 
         # update Y_hat by alpha, Phi 
         Y_prime=Y_hat[Domain]-X[Domain].dot(R)*S-beta
-        alpha=recover_alpha_cuda(Phi[Domain],Y_prime)
+        alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
         # print('error from alpha is',np.linalg.norm(Phi.dot(alpha)[Domain]-Y_prime))
 
         # update selected points 
@@ -1206,7 +1207,7 @@ def sopt_TPS(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80
         Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
         Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
         obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
-        L=piRow.copy()
+        L=piRow.astype(np.int64)
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
 
@@ -1285,7 +1286,7 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
 
         Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
         Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=opt1d.solve(Y_hat_s,Y_s,Lambda)
+        obj,phi,psi,piRow,piCol=solve(Y_hat_s,Y_s,Lambda)
         L=piRow.copy()
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
