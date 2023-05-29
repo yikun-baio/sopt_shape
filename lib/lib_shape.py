@@ -935,7 +935,7 @@ def TPS_recover_parameter_cuda(Phi_T,X_bar,Y,epsilon):
     R=R0[0:d,:]
     Q1_c,Q2_c,R_c,M_c,Y_c=cp.array(Q1),cp.array(Q2),cp.array(R),cp.array(M),cp.array(Y)
     alpha=Q2_c.dot(cp.linalg.inv(Q2_c.T.dot(M_c).dot(Q2_c))).dot(Q2_c.T).dot(Y_c)
-    B=np.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha))
+    B=cp.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha))
     return cp.asnumpy(alpha),cp.asnumpy(B)
 
 
