@@ -7,10 +7,14 @@ Created on Sun Jun 26 14:25:29 2022
 import torch 
 import os
 import sys
+import cupy as cp
 
 from .library import *
 from .lib_ot import *   
-from .sliced_opt import * 
+from .sliced_opt import *
+from scipy import linalg
+import opt1d
+
 #print('hello')
 import matplotlib.pyplot as plt
 
@@ -361,6 +365,37 @@ def recover_rotation(X,Y):
     rotation=U.dot(diag).dot(VT)
     scaling=np.sum(np.abs(S.T))/np.trace(Y_c.T.dot(Y_c))
     return rotation,scaling
+
+
+def recover_rotation_cuda(X,Y):
+    """
+    return the optimal rotation, scaling based on the correspondence (X,Y) 
+    
+    Parameters:
+    ----------
+    X: numpy array, shape (n,d), flaot64, target
+    Y: numpy array, shape (n,d), flaot64, source
+    
+    Return:
+    --------
+    rotation: numpy array, shape (d,d), float64 
+    scaling: float64 
+    
+    """
+
+    X_c,Y_c=cp.array(X),cp.array(Y)
+    n,d=X.shape
+    X_center,Y_center=X_c-cp.mean(X_c,0),Y_c-cp.mean(Y_c,0)
+    
+    YX=Y_center.T.dot(X_center)
+    U,S,VT=cp.linalg.svd(YX)
+    R=U.dot(VT)
+    diag=cp.eye(d)
+    diag[d-1,d-1]=cp.linalg.det(R.T)
+    rotation=U.dot(diag).dot(VT)
+    scaling=cp.sum(cp.abs(S.T))/cp.trace(Y_c.T.dot(Y_c))
+    return cp.asnumpy(rotation),cp.asnumpy(scaling)
+
 
 
 
@@ -776,4 +811,523 @@ def normal_image(X_data,X_noise,Y_data,Y_noise,image_path,name):
     plt.savefig(image_path+'/'+name+'.png',dpi=200,format='png',bbox_inches='tight')
     plt.show()
     plt.close()
+
     
+
+@nb.njit()
+def Gaussian_kernel(r2,sigma2):
+    return np.exp(-r2/sigma2)
+
+# def Gaussian_kernel(r2,sigma2):
+#     return np.exp(-r2/sigma2)
+
+
+@nb.njit()
+def TPS_kernel_2D(r2):
+    return 1/2*r2*np.log(r2+1e-10)
+
+@nb.njit()
+def TPS_kernel_3D(r2):
+    return np.sqrt(r2)
+
+
+
+@nb.njit(fastmath=True)
+def kernel_matrix_Gaussian(c,x,sigma2): #,Type='Gaussian'):
+    '''
+    x: (n,d) numpy array
+    c: (n,d) numpy array
+    type: 0 Gaussian kernel 
+    type: 1 SPF kernel 
+    '''
+    #c1,x1=np.meshgrid(c,x)
+    K,d=c.shape
+    n=x.shape[0]
+    r2=np.zeros((n,K))
+    #Phi=np.zeros((n,d))
+    for i in range(d):
+        r2+=np.square(x[:,i:i+1]-c[:,i])
+    if Type=='Gaussian': # Gaussian Kernel 
+        Phi=Gaussian_kernel(r2,sigma2)
+    if Type=='TPS': # TPS Kernel
+        Phi=TPS_kernel_2D(r2)
+        #ID=np.isnan(Phi)
+        #Phi[ID]=0.0
+    return Phi
+
+
+
+
+
+@nb.njit(fastmath=True)
+def kernel_matrix_Gaussian(c,x,sigma2):
+    '''
+    x: (n,d) numpy array
+    c: (n,d) numpy array
+    '''
+   
+    K,d=c.shape
+    n=x.shape[0]
+    #r2=np.zeros((n,K))
+    diff_matrix=np.expand_dims(x,1)-np.expand_dims(c,0)
+    r2=np.sum(np.square(diff_matrix),axis=2)
+    Phi=np.zeros((n,d))
+    Phi=Gaussian_kernel(r2,sigma2)
+    return Phi
+
+@nb.njit(fastmath=True)
+def kernel_matrix_TPS(c,x,D):
+    '''
+    x: (n,d) numpy array
+    c: (n,d) numpy array
+    '''
+   
+    K,d=c.shape
+    n=x.shape[0]
+    #r2=np.zeros((n,K))
+    diff_matrix=np.expand_dims(x,1)-np.expand_dims(c,0)
+    r2=np.sum(np.square(diff_matrix),axis=2)
+    Phi=np.zeros((n,d))
+    if D==2: 
+        Phi=TPS_kernel_2D(r2)
+    elif D==3:
+        Phi=TPS_kernel_3D(r2)
+    return Phi
+
+
+@nb.njit(fastmath=True)
+def recover_alpha(Phi,y_prime,epsilon=1e-4):
+    n,d=Phi.shape
+    return np.linalg.inv(Phi.T.dot(Phi)+epsilon*np.eye(d)).dot(Phi.T.dot(y_prime))
+
+    
+def recover_alpha_cuda(Phi,y_prime,epsilon=1e-4):
+    n,d=Phi.shape
+    Phi_c=cp.array(Phi)
+    y_prime_c=cp.array(y_prime)
+    re=cp.linalg.inv(Phi_c.T.dot(Phi_c)+epsilon*cp.eye(d)).dot(Phi_c.T.dot(y_prime_c))
+    return cp.asnumpy(re)
+
+
+#@nb.njit()
+def TPS_recover_parameter(Phi_T,X_bar,Y,epsilon):
+    n,d=X_bar.shape
+    n,K=Phi_T.shape
+    diag_M=np.zeros((n,K))
+    np.fill_diagonal(diag_M, epsilon)
+    M=Phi_T+diag_M
+    Q, R0 = linalg.qr(X_bar)
+    Q1,Q2=Q[:,0:d],Q[:,d:n]
+    R=R0[0:d,:]
+    alpha=Q2.dot(np.linalg.inv(Q2.T.dot(M).dot(Q2))).dot(Q2.T).dot(Y)
+    B=np.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
+    return alpha,B
+
+def TPS_recover_parameter_cuda(Phi_T,X_bar,Y,epsilon):
+    n,d=X_bar.shape
+    n,K=Phi_T.shape
+    diag_M=np.zeros((n,K))
+    np.fill_diagonal(diag_M, epsilon)
+    M=Phi_T+diag_M
+    Q, R0 = linalg.qr(X_bar)
+    Q1,Q2=Q[:,0:d],Q[:,d:n]
+    R=R0[0:d,:]
+    Q1_c,Q2_c,R_c,M_c,Y_c=cp.array(Q1),cp.array(Q2),cp.array(R),cp.array(M),cp.array(Y)
+    alpha=Q2_c.dot(cp.linalg.inv(Q2_c.T.dot(M_c).dot(Q2_c))).dot(Q2_c.T).dot(Y_c)
+    B=np.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha_c))
+    return cp.asnumpy(alpha),cp.asnumpy(B)
+
+
+@nb.njit(fastmath=True)
+def transform_TPS(X_bar,Phi,alpha,B):
+    return Phi.dot(alpha)+X_bar.dot(B)
+
+
+@nb.njit(fastmath=True)
+def transform_ICP(x,Phi,alpha,S,R,beta):
+    return Phi.dot(alpha)+X.dot(S).dot(R)+beta
+
+
+@nb.njit(fastmath=True)
+def cost_matrix_d(X,Y):
+    '''
+    input: 
+        X: (n,) float np array
+        Y: (m,) float np array
+    output:
+        M: n*m matrix, M_ij=c(X_i,Y_j) where c is defined by cost_function.
+    
+    '''
+
+    X1=np.expand_dims(X,1)
+    Y1=np.expand_dims(Y,0)
+    M=np.sum(cost_function(X1,Y1),2)
+    return M
+
+
+def init_center(X,Y,K,eps):
+    M=cost_matrix_d(X,Y)
+    row_min=M.min(1)
+    indices=np.where(row_min>eps)[0]
+    n=indices.shape[0]
+    if K<n:
+        rand_index=indices[np.random.randint(0,n,K)]
+    else: 
+        rand_index=indices
+    return X[rand_index]
+
+    
+
+def make_plot(X,Y):
+    fig = plt.figure(figsize=(2*800/72,800/72))    
+    ax = fig.add_subplot(projection='3d')
+    x=X[:,0]
+    y=X[:,1]
+    z=X[:,2]
+    ax.scatter3D(X[:,0], X[:,2], X[:,1], s=0.5,c='r',alpha=0.5) #=X[:,1]*np.sqrt(X[:,0]**2+X[:,2]**2), cmap='bone')
+    
+    #x=Y[:,0]
+    #y=Y[:,1]
+    #z=Y[:,2]
+    ax.scatter3D(Y[:,0], Y[:,2], Y[:,1], s=0.5,c='b',alpha=0.5) #Y[:,1]*np.sqrt(Y[:,0]**2+Y[:,2]**2), cmap='bone')
+    
+    ax.set_xlim([-1,1]);ax.set_ylim([-1,1]);ax.set_zlim([-1,1])
+    ax.view_init(10, 45)
+    plt.show()
+
+
+
+
+def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,200,400,500,700,900]):
+    N1,D=X.shape
+    C=X.copy()
+    Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+
+    # initlize 
+    R=np.eye(D)    
+    S=1.0 #np.eye(d)
+    beta=vec_mean(Y)-vec_mean(S*X.dot(R)) 
+    alpha=np.zeros((C.shape[0],D))
+    
+    #paramlist=[]
+    projections=random_projections(D,n_projections,1)
+    mass_diff=0
+    #b=0
+    b=np.log((N1-N0+1)/1)
+    Lambda=60*np.sum((vec_mean(Y)-vec_mean(X))**2)
+    Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
+    # make_plot(Y_hat,Y)
+
+    Domain_org=arange(0,N1)
+    Delta=Lambda/8
+    lower_bound=Lambda/10000
+    L=Domain_org.copy()
+
+    Yhat_list=list()
+    for (epoch,theta) in enumerate(projections):    
+        # compute correspondence 
+        Y_hat_theta=np.dot(theta,Y_hat.T)
+        Y_theta=np.dot(theta,Y.T)
+
+        Y_hat_indice=Y_hat_theta.argsort()
+        Y_indice=Y_theta.argsort()
+        Y_hat_s=Y_hat_theta[Y_hat_indice]
+        Y_s=Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
+        L=piRow.copy()
+        L=recover_indice(Y_hat_indice,Y_indice,L)
+        Domain=Domain_org[L>=0]
+
+        #move selected Y_hat
+        mass=Domain.shape[0]
+        # if Domain.shape[0]>=1:
+        Range=L[L>=0]
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+
+        # find optimal R,S,beta, conditonal on alpha
+        Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
+        R,S=recover_rotation(Y_prime2,X[Domain])
+        beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R)*S)
+
+        # update Y_hat by alpha, Phi 
+        Y_prime=Y_hat[Domain]-X[Domain].dot(R)*S-beta
+        alpha=recover_alpha(Phi[Domain],Y_prime)
+        # print('error from alpha is',np.linalg.norm(Phi.dot(alpha)[Domain]-Y_prime))
+
+        # update selected points 
+        # model 1
+        Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
+
+        # update lambda 
+        N=(N1-N0)*1/(1+b*(epoch/500))+N0
+        mass_diff=mass-N
+        if mass_diff>N*0.009:
+            Lambda-=Delta 
+        if mass_diff<-N*0.003:
+            Lambda+=Delta
+            Delta=Lambda*1/8
+        if Lambda<Delta:
+            Lambda=Delta
+            Delta=Delta*1/2
+        if Delta<lower_bound:
+            Delta=lower_bound
+        if epoch in record_index or epoch==n_projections-1:
+            Yhat_list.append(Y_hat)
+            
+        # if epoch==0 or epoch%5==0 and epoch<=40:
+        #     make_plot(Y_hat,Y)
+        #     print(len(Yhat_list))
+        #     print(Yhat_list[-1].shape)
+        # elif epoch%100==0: 
+        #     make_plot(Y_hat,Y)
+
+    return Yhat_list,(Phi,alpha,S,R,beta)
+
+
+
+
+def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,200,400,500,700,900]):
+    N1,D=X.shape
+    C=X.copy()
+    Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+
+    # initlize 
+    R=np.eye(D)    
+    S=1.0 #np.eye(d)
+    beta=vec_mean(Y)-vec_mean(S*X.dot(R)) 
+    alpha=np.zeros((C.shape[0],D))
+    
+    #paramlist=[]
+    projections=random_projections(D,n_projections,1)
+    mass_diff=0
+    #b=0
+    b=np.log((N1-N0+1)/1)
+    Lambda=60*np.sum((vec_mean(Y)-vec_mean(X))**2)
+    Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
+    # make_plot(Y_hat,Y)
+
+    Domain_org=arange(0,N1)
+    Delta=Lambda/8
+    lower_bound=Lambda/10000
+    L=Domain_org.copy()
+
+    Yhat_list=list()
+    for (epoch,theta) in enumerate(projections):    
+        # compute correspondence 
+        Y_hat_theta=np.dot(theta,Y_hat.T)
+        Y_theta=np.dot(theta,Y.T)
+
+        Y_hat_indice=Y_hat_theta.argsort()
+        Y_indice=Y_theta.argsort()
+        Y_hat_s=Y_hat_theta[Y_hat_indice]
+        Y_s=Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=opt1d.solve(Y_hat_s,Y_s,Lambda)
+        L=piRow.copy()
+        L=recover_indice(Y_hat_indice,Y_indice,L)
+        Domain=Domain_org[L>=0]
+
+        #move selected Y_hat
+        mass=Domain.shape[0]
+        # if Domain.shape[0]>=1:
+        Range=L[L>=0]
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+
+        # find optimal R,S,beta, conditonal on alpha
+        Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
+        R,S=recover_rotation_cuda(Y_prime2,X[Domain])
+        beta=np.mean(Y_prime2,0)-np.mean(X[Domain].dot(R)*S,0)
+
+        # update Y_hat by alpha, Phi 
+        Y_prime=Y_hat[Domain]-X[Domain].dot(R)*S-beta
+        alpha=recover_alpha_cuda(Phi[Domain],Y_prime)
+        # print('error from alpha is',np.linalg.norm(Phi.dot(alpha)[Domain]-Y_prime))
+
+        # update selected points 
+        # model 1
+        Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
+
+        # update lambda 
+        N=(N1-N0)*1/(1+b*(epoch/500))+N0
+        mass_diff=mass-N
+        if mass_diff>N*0.009:
+            Lambda-=Delta 
+        if mass_diff<-N*0.003:
+            Lambda+=Delta
+            Delta=Lambda*1/8
+        if Lambda<Delta:
+            Lambda=Delta
+            Delta=Delta*1/2
+        if Delta<lower_bound:
+            Delta=lower_bound
+        if epoch in record_index or epoch==n_projections-1:
+            Yhat_list.append(Y_hat)
+            
+        # if epoch==0 or epoch%5==0 and epoch<=40:
+        #     make_plot(Y_hat,Y)
+        #     print(len(Yhat_list))
+        #     print(Yhat_list[-1].shape)
+        # elif epoch%100==0: 
+        #     make_plot(Y_hat,Y)
+
+    return Yhat_list,(Phi,alpha,S,R,beta)
+
+
+def sopt_TPS(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80,90,100,150,200,250,300]):
+    N1,D=X.shape
+    C=X.copy()
+    Phi0=kernel_matrix_TPS(C,X,D) 
+    X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+    # initlize 
+    R=np.eye(D)    
+    S=1.0
+    beta=np.zeros(3) #vec_mean(Y)-vec_mean(X.dot(S).dot(R)) 
+    alpha=np.zeros((C.shape[0],D))
+    B=np.vstack((beta,R))
+
+    #paramlist=[]
+    projections=random_projections(D,n_projections,1)
+    mass_diff=0
+    b=np.log((N1-N0+1)/1)
+    Lambda=60*np.sum((Y.mean(0)-X.mean(0))**2)
+    Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
+    # make_plot(Y_hat,Y)
+
+    Domain_org=arange(0,N1)
+    Delta=Lambda/8
+    lower_bound=Lambda/10000
+    L=Domain_org.copy()
+
+    Yhat_list=list()
+    for (epoch,theta) in enumerate(projections):
+        # compute correspondence 
+        Y_hat_theta=np.dot(theta,Y_hat.T)
+        Y_theta=np.dot(theta,Y.T)
+
+        Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
+        Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
+        L=piRow.copy()
+        L=recover_indice(Y_hat_indice,Y_indice,L)
+        Domain=Domain_org[L>=0]
+
+        #move selected Y_hat
+        mass=Domain.shape[0]
+        Range=L[L>=0]
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+
+        # find optimal alpha, B
+        Phi_T,X_bar_select,Y_select=Phi0[Domain],X_bar[Domain],Y_hat[Domain]
+        alpha,B=TPS_recover_parameter(Phi_T,X_bar_select,Y_select,eps)
+
+
+        # update selected points 
+        # our model
+        Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
+
+        
+        # update lambda 
+        N=(N1-N0)*1/(1+b*(epoch/500))+N0
+        mass_diff=mass-N
+        if mass_diff>N*0.009:
+            Lambda-=Delta 
+        if mass_diff<-N*0.003:
+            Lambda+=Delta
+            Delta=Lambda*1/8
+        if Lambda<Delta:
+            Lambda=Delta
+            Delta=Delta*1/2
+        if Delta<lower_bound:
+            Delta=lower_bound
+        
+        # recode point cloud in the process
+        if epoch in record_index or epoch==n_projections-1:
+            Yhat_list.append(Y_hat)
+            
+#         if epoch%5==0 and epoch<=40:
+#             make_plot(Y_hat,Y)
+#         elif epoch%100==0: 
+#             make_plot(Y_hat,Y)
+            
+        
+    return Yhat_list,(Phi0,alpha,B)
+
+
+def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80,90,100,150,200,250,300]):
+    N1,D=X.shape
+    C=X.copy()
+    Phi0=kernel_matrix_TPS(C,X,D) 
+    X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+    # initlize 
+    R=np.eye(D)    
+    S=1.0
+    beta=np.zeros(3) #vec_mean(Y)-vec_mean(X.dot(S).dot(R)) 
+    alpha=np.zeros((C.shape[0],D))
+    B=np.vstack((beta,R))
+
+    #paramlist=[]
+    projections=random_projections(D,n_projections,1)
+    mass_diff=0
+    b=np.log((N1-N0+1)/1)
+    Lambda=60*np.sum((Y.mean(0)-X.mean(0))**2)
+    Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
+    # make_plot(Y_hat,Y)
+
+    Domain_org=np.arange(0,N1)
+    Delta=Lambda/8
+    lower_bound=Lambda/10000
+    L=Domain_org.copy()
+
+    Yhat_list=list()
+    for (epoch,theta) in enumerate(projections):
+        # compute correspondence 
+        Y_hat_theta=np.dot(theta,Y_hat.T)
+        Y_theta=np.dot(theta,Y.T)
+
+        Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
+        Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=opt1d.solve(Y_hat_s,Y_s,Lambda)
+        L=piRow.copy()
+        L=recover_indice(Y_hat_indice,Y_indice,L)
+        Domain=Domain_org[L>=0]
+
+        #move selected Y_hat
+        mass=Domain.shape[0]
+        Range=L[L>=0]
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+
+        # find optimal alpha, B
+        Phi_T,X_bar_select,Y_select=Phi0[Domain],X_bar[Domain],Y_hat[Domain]
+        alpha,B=TPS_recover_parameter_cuda(Phi_T,X_bar_select,Y_select,eps)
+
+
+        # update selected points 
+        # our model
+        Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
+
+        
+        # update lambda 
+        N=(N1-N0)*1/(1+b*(epoch/500))+N0
+        mass_diff=mass-N
+        if mass_diff>N*0.009:
+            Lambda-=Delta 
+        if mass_diff<-N*0.003:
+            Lambda+=Delta
+            Delta=Lambda*1/8
+        if Lambda<Delta:
+            Lambda=Delta
+            Delta=Delta*1/2
+        if Delta<lower_bound:
+            Delta=lower_bound
+        
+        # recode point cloud in the process
+        if epoch in record_index or epoch==n_projections-1:
+            Yhat_list.append(Y_hat)
+            
+#         if epoch%5==0 and epoch<=40:
+#             make_plot(Y_hat,Y)
+#         elif epoch%100==0: 
+#             make_plot(Y_hat,Y)
+            
+        
+    return Yhat_list,(Phi0,alpha,B)
+
