@@ -911,13 +911,14 @@ def recover_alpha_cuda(Phi,y_prime,epsilon=1e-4):
 
 
 #@nb.njit()
+#@nb.njit()
 def TPS_recover_parameter(Phi_T,X_bar,Y,epsilon):
     n,d=X_bar.shape
     n,K=Phi_T.shape
     diag_M=np.zeros((n,K))
     np.fill_diagonal(diag_M, epsilon)
     M=Phi_T+diag_M
-    Q, R0 = linalg.qr(X_bar)
+    Q, R0 = np.linalg.qr(X_bar,'complete')
     Q1,Q2=Q[:,0:d],Q[:,d:n]
     R=R0[0:d,:]
     alpha=Q2.dot(np.linalg.inv(Q2.T.dot(M).dot(Q2))).dot(Q2.T).dot(Y)
@@ -925,18 +926,21 @@ def TPS_recover_parameter(Phi_T,X_bar,Y,epsilon):
     return alpha,B
 
 def TPS_recover_parameter_cuda(Phi_T,X_bar,Y,epsilon):
+    Phi_T,X_bar,Y=cp.array(Phi_T),cp.array(X_bar),cp.array(Y)
     n,d=X_bar.shape
     n,K=Phi_T.shape
-    diag_M=np.zeros((n,K))
-    np.fill_diagonal(diag_M, epsilon)
+    diag_M=cp.zeros((n,K))
+    cp.fill_diagonal(diag_M,epsilon)
     M=Phi_T+diag_M
-    Q, R0 = linalg.qr(X_bar)
+    Q, R0 = cp.linalg.qr(X_bar,'complete')
     Q1,Q2=Q[:,0:d],Q[:,d:n]
     R=R0[0:d,:]
-    Q1_c,Q2_c,R_c,M_c,Y_c=cp.array(Q1),cp.array(Q2),cp.array(R),cp.array(M),cp.array(Y)
-    alpha=Q2_c.dot(cp.linalg.inv(Q2_c.T.dot(M_c).dot(Q2_c))).dot(Q2_c.T).dot(Y_c)
-    B=cp.linalg.inv(R_c).dot(Q1_c.T).dot(Y_c-M_c.dot(alpha))
-    return cp.asnumpy(alpha),cp.asnumpy(B)
+    # print(Q2.get().shape)
+    # print(M.get().shape)
+    Re1=cp.linalg.inv(Q2.T.dot(M).dot(Q2))
+    alpha=Q2.dot(Re1).dot(Q2.T).dot(Y)
+    B=cp.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
+    return alpha.get(),B.get()
 
 
 @nb.njit(fastmath=True)
@@ -1043,10 +1047,11 @@ def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,
         mass=Domain.shape[0]
         # if Domain.shape[0]>=1:
         Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
 
         # find optimal R,S,beta, conditonal on alpha
         Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
+        #Y_prime2=Y_hat-Phi.dot(alpha)
         R,S=recover_rotation(Y_prime2,X[Domain])
         beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R)*S)
 
@@ -1131,7 +1136,7 @@ def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, eps=1e-4, record_i
         mass=Domain.shape[0]
         # if Domain.shape[0]>=1:
         Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
 
         # find optimal R,S,beta, conditonal on alpha
         Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
@@ -1162,7 +1167,8 @@ def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, eps=1e-4, record_i
             Delta=lower_bound
         if epoch in record_index or epoch==n_projections-1:
             Yhat_list.append(Y_hat)
-            
+        if epoch<=5:
+            make_plot(Y_hat,Y)    
         # if epoch==0 or epoch%5==0 and epoch<=40:
         #     make_plot(Y_hat,Y)
         #     print(len(Yhat_list))
@@ -1214,7 +1220,7 @@ def sopt_TPS(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80
         #move selected Y_hat
         mass=Domain.shape[0]
         Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
 
         # find optimal alpha, B
         Phi_T,X_bar_select,Y_select=Phi0[Domain],X_bar[Domain],Y_hat[Domain]
@@ -1261,7 +1267,7 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
     # initlize 
     R=np.eye(D)    
     S=1.0
-    beta=np.zeros(3) #vec_mean(Y)-vec_mean(X.dot(S).dot(R)) 
+    beta=np.mean(Y,0)-np.mean(S*X.dot(R),0) 
     alpha=np.zeros((C.shape[0],D))
     B=np.vstack((beta,R))
 
@@ -1280,6 +1286,7 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
 
     Yhat_list=list()
     for (epoch,theta) in enumerate(projections):
+        # print(epoch)
         # compute correspondence 
         Y_hat_theta=np.dot(theta,Y_hat.T)
         Y_theta=np.dot(theta,Y.T)
@@ -1290,16 +1297,20 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
         L=piRow.astype(np.int64)
         L=recover_indice(Y_hat_indice,Y_indice,L)
         Domain=Domain_org[L>=0]
+        # if Domain.shape[0]==0:
+        #   print('error')
 
         #move selected Y_hat
         mass=Domain.shape[0]
         Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Domain]-Y_hat_theta[Domain],1)*theta
+        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
 
         # find optimal alpha, B
-        Phi_T,X_bar_select,Y_select=Phi0[Domain],X_bar[Domain],Y_hat[Domain]
-        alpha,B=TPS_recover_parameter_cuda(Phi_T,X_bar_select,Y_select,eps)
-
+        Phi_T,X_bar_select,Y_select=Phi0[Domain][:,Domain],X_bar[Domain],Y_hat[Domain]
+        #Phi_T,X_bar_select,Y_select=Phi0,X_bar,Y_hat
+        
+        alpha_s,B=TPS_recover_parameter(Phi_T,X_bar_select,Y_select,eps)
+        alpha=alpha_s
 
         # update selected points 
         # our model
