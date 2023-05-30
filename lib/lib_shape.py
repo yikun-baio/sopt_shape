@@ -1167,8 +1167,7 @@ def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, eps=1e-4, record_i
             Delta=lower_bound
         if epoch in record_index or epoch==n_projections-1:
             Yhat_list.append(Y_hat)
-        if epoch<=5:
-            make_plot(Y_hat,Y)    
+ 
         # if epoch==0 or epoch%5==0 and epoch<=40:
         #     make_plot(Y_hat,Y)
         #     print(len(Yhat_list))
@@ -1303,7 +1302,8 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
         #move selected Y_hat
         mass=Domain.shape[0]
         Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
+        if Domain.shape[0]>0:
+            Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
 
         # find optimal alpha, B
         Phi_T,X_bar_select,Y_select=Phi0[Domain][:,Domain],X_bar[Domain],Y_hat[Domain]
@@ -1334,7 +1334,8 @@ def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,
         # recode point cloud in the process
         if epoch in record_index or epoch==n_projections-1:
             Yhat_list.append(Y_hat)
-            
+        if epoch<=5:
+            make_plot(Y_hat,Y)   
 #         if epoch%5==0 and epoch<=40:
 #             make_plot(Y_hat,Y)
 #         elif epoch%100==0: 
