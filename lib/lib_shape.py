@@ -897,12 +897,12 @@ def kernel_matrix_TPS(c,x,D):
 
 
 @nb.njit(fastmath=True)
-def recover_alpha(Phi,y_prime,epsilon=1e-4):
+def recover_alpha(Phi,y_prime,epsilon=1):
     n,d=Phi.shape
     return np.linalg.inv(Phi.T.dot(Phi)+epsilon*np.eye(d)).dot(Phi.T.dot(y_prime))
 
     
-def recover_alpha_cuda(Phi,y_prime,epsilon=1e-4):
+def recover_alpha_cuda(Phi,y_prime,epsilon=1e-2):
     n,d=Phi.shape
     Phi_c=cp.array(Phi)
     y_prime_c=cp.array(y_prime)
@@ -1003,7 +1003,7 @@ def make_plot(X,Y):
 
 
 
-def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-4, record_index=[0,20,100,200,400,500,700,900]):
+def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-6,eps=1e-6, record_index=[0,20,100,200,400,500,700,900]):
     N1,D=X.shape
     C=X.copy()
     Phi=kernel_matrix_Gaussian(C,X,sigma2) 

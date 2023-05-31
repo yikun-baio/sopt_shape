@@ -152,22 +152,14 @@ def opt_plans_64(X,Y,Lambda_list):
         sopt_dist=opt_cost_list.sum()/n_projections
     return sopt_dist,opt_plan_X_list,X_projections,Y_projections
 
-def opt_cost_from_plans(X_projections,Y_projections,Lambda_list,opt_plan_X_list,cache=True):
-    n_projections,n=X_projections.shape
-    n_projections,m=Y_projections.shape
-    opt_cost_list=np.zeros(n_projections)
-    for (epoch,(X_theta,Y_theta,Lambda,opt_plan)) in enumerate(zip(X_projections,Y_projections,Lambda_list,opt_plan_list)):
-        Domain=opt_plan>=0
-        Range=opt_plan[Domain]
-        X_select=X_theta[Domain]
-        Y_select=Y_theta[Range]
-        trans_cost=np.sum(cost_function(X_select,Y_select))
-        mass_panalty=Lambda*(m+n-2*Domain.sum())
-        opt_cost_list[epoch]=trans_cost+mass_panalty
-    return opt_cost_list
 
 
-        
+
+
+
+            
+
+
         
    
         
