@@ -1,1 +1,0 @@
-# sopt_shape
