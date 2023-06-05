@@ -304,8 +304,222 @@ def Gaussian_mixture_32(mu_list, variance_list,n):
     return X
 
 
+def opt_pr(mu, nu, M, mass, **kwargs):
+    """
+    Solves the partial optimal transport problem for the quadratic cost
+    and returns the OT plan
+
+    The function considers the following problem:
+
+    .. math::
+        \gamma = \mathop{\arg \min}_\gamma \quad \langle \gamma, \mathbf{M} \rangle_F
+
+    .. math::
+        s.t. \ \gamma \mathbf{1} &\leq \mathbf{a}
+
+             \gamma^T \mathbf{1} &\leq \mathbf{b}
+
+             \gamma &\geq 0
+
+             \mathbf{1}^T \gamma^T \mathbf{1} = m &\leq \min\{\|\mathbf{a}\|_1, \|\mathbf{b}\|_1\}
+
+
+    where :
+
+    - :math:`\mathbf{M}` is the metric cost matrix
+    - :math:`\mathbf{a}` and :math:`\mathbf{b}` are source and target unbalanced distributions
+    - `m` is the amount of mass to be transported
+
+    Parameters
+    ----------
+    a : np.ndarray (dim_a,)
+        Unnormalized histogram of dimension `dim_a`
+    b : np.ndarray (dim_b,)
+        Unnormalized histograms of dimension `dim_b`
+    M : np.ndarray (dim_a, dim_b)
+        cost matrix for the quadratic cost
+    m : float, optional
+        amount of mass to be transported
+    nb_dummies : int, optional, default:1
+        number of reservoir points to be added (to avoid numerical
+        instabilities, increase its value if an error is raised)
+    log : bool, optional
+        record log if True
+    **kwargs : dict
+        parameters can be directly passed to the emd solver
+
+
+    .. warning::
+        When dealing with a large number of points, the EMD solver may face
+        some instabilities, especially when the mass associated to the dummy
+        point is large. To avoid them, increase the number of dummy points
+        (allows a smoother repartition of the mass over the points).
+
+
+    Returns
+    -------
+    gamma : (dim_a, dim_b) ndarray
+        Optimal transportation matrix for the given parameters
+    log : dict
+        log dictionary returned only if `log` is `True`
+
+
+    Examples
+    --------
+    import ot
+    >>> a = [.1, .2]
+    >>> b = [.1, .1]
+    >>> M = [[0., 1.], [2., 3.]]
+    >>> np.round(partial_wasserstein(a,b,M), 2)
+    array([[0.1, 0. ],
+           [0. , 0.1]])
+    >>> np.round(partial_wasserstein(a,b,M,m=0.1), 2)
+    array([[0.1, 0. ],
+           [0. , 0. ]])
+
+    References
+    ----------
+    ..  [28] Caffarelli, L. A., & McCann, R. J. (2010) Free boundaries in
+        optimal transport and Monge-Ampere obstacle problems. Annals of
+        mathematics, 673-730.
+    ..  [29] Chapel, L., Alaya, M., Gasso, G. (2020). "Partial Optimal
+        Transport with Applications on Positive-Unlabeled Learning".
+        NeurIPS.
+
+    See Also
+    --------
+    ot.partial.partial_wasserstein_lagrange: Partial Wasserstein with
+    regularization on the marginals
+    ot.partial.entropic_partial_wasserstein: Partial Wasserstein with a
+    entropic regularization parameter
+    """
     
+    Lambda,A=1.0,1.0
+    n,m=M.shape 
+    mu1,nu1=np.zeros(n+1),np.zeros(m+1)
+    mu1[0:n],nu1[0:m]=mu,nu
+    mu1[-1],nu1[-1]=np.sum(nu)-mass,np.sum(mu)-mass
+    M1=np.zeros((n+1,m+1),dtype=np.float64)
+    M1[0:n,0:m]=M
+    M1[:,m],M1[n,:]=Lambda,Lambda
+    M1[n,m]=2*Lambda+A
+
+
+
+    # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
+    # result_code_string = check_result(result_code)
+    gamma1=ot.lp.emd(mu1,nu1,M1,**kwargs)
+    gamma=gamma1[0:n,0:m]
+    cost=np.sum(M*gamma)
+
+    return cost,gamma
+
     
     
 
     
+def OPT_Gaussian(X,Y,N0,sigma2=0.1,eps=2.0,n_iterations=200,record_index=[0,10,20,30,50,100,199]):
+  N1,D=X.shape
+  #C=X.copy()
+  Phi=kernel_matrix_Gaussian(X,X,sigma2)
+
+  # initlize 
+  R=np.eye(D)
+  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+  Yhat=Phi.dot(alpha)+X.dot(R)+beta 
+  make_plot(Yhat,Y)
+  epoch=0
+  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
+  R_list,beta_list,alpha_list=list(),list(),list()
+  while epoch<n_iterations:
+    if epoch%10==0:
+      R_pre,beta_pre=R.copy(),beta.copy()
+    M=cost_matrix_d(Yhat,Y)
+    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
+    p1_hat=np.sum(gamma,1)
+    Domain=p1_hat>1e-10
+    #BaryP=np.zeros((N1,D))
+    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
+    Yhat[Domain]=BaryP
+
+    
+   
+    # find optimal R,S,beta, conditonal on alpha    
+    Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+    R,S=recover_rotation(Y_prime2,X[Domain])
+    beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+
+
+
+    if epoch>=20 and epoch%10>3 and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<0.08:
+      Y_prime=Yhat-X.dot(R)-beta
+      alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
+
+    Yhat=Phi.dot(alpha)+X.dot(R)+beta
+    
+    # if epoch%15==0:
+    #     print('model')
+    #     make_plot(Yhat,Y)
+    #     print('linear error',np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre))
+    #     print('-----')
+    epoch+=1
+    if epoch in record_index:
+      R_list.append(R)
+      beta_list.append(beta)
+      alpha_list.append(alpha)
+  return R_list,beta_list,alpha_list
+
+    
+
+  
+
+def OPT_TPS(X,Y,N0,eps,n_iterations=200,record_index=[0,10,20,30,50,100,199]):
+  N1,D=X.shape
+  C=X.copy()
+  Phi0=kernel_matrix_TPS(C,X,D=2)
+  X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+  # initlize 
+  R=np.eye(D)
+  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+  B=np.vstack((beta,R))
+  Yhat=Phi0.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta 
+  epoch=0
+  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
+  alpha_list,B_list=list(),list()
+  while epoch<n_iterations:
+    if epoch%10==0:
+      R_pre,beta_pre=R.copy(),beta.copy()
+    M=cost_matrix_d(Yhat,Y)
+    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
+    p1_hat=np.sum(gamma,1)
+    Domain=p1_hat>1e-10
+    #BaryP=np.zeros((N1,D))
+    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
+    Yhat[Domain]=BaryP
+
+   
+    if epoch>=20 and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<0.08:
+      alpha,B=TPS_recover_parameter_cuda(Phi0,X_bar,Yhat,eps)
+    else:
+       # find optimal R,S,beta, conditonal on alpha    
+      Y_prime2=Yhat[Domain]-Phi0[Domain].dot(alpha)
+      R,S=recover_rotation(Y_prime2,X[Domain])
+      beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+      B=np.vstack((beta,R))
+
+    Yhat=Phi0.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+    if epoch in record_index:
+      B_list.append(B)
+      # beta_list.append(beta)
+      alpha_list.append(alpha)
+
+
+    
+    # if epoch%5==0:
+    #     print('model')
+    #     make_plot(Yhat,Y)
+    #     print('linear error',np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre))
+    #     print('-----')
+    epoch+=1
+  return alpha_list,B_list
+
