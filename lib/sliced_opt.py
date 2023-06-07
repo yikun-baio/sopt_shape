@@ -125,32 +125,24 @@ def X_correspondence_pot(X,Y,projections):
 
     
 
-@nb.njit(['Tuple((float64,int64[:,:],float64[:,:],float64[:,:]))(float64[:,:],float64[:,:],float64[:])'],parallel=True,fastmath=True,cache=True)
-def opt_plans_64(X,Y,Lambda_list):
+@nb.njit(parallel=True,fastmath=True,cache=True)
+def opt_plans(X,Y,projections,Lambda_list):
     n,d=X.shape
     n_projections=Lambda_list.shape[0]
-    projections=random_projections(d,n_projections,0)
     X_projections=projections.dot(X.T)
     Y_projections=projections.dot(Y.T)
     opt_plan_X_list=np.zeros((n_projections,n),dtype=np.int64)
-    #opt_plan_Y_list=np.zeros((n_projections,n),dtype=np.int64)
     opt_cost_list=np.zeros(n_projections)
     for (epoch,(X_theta,Y_theta,Lambda)) in enumerate(zip(X_projections,Y_projections,Lambda_list)):
         X_indice=X_theta.argsort()
         Y_indice=Y_theta.argsort()
         X_s=X_theta[X_indice]
         Y_s=Y_theta[Y_indice]
-        # M=cost_matrix(X_s,Y_s)
         obj,phi,psi,piRow,piCol=solve_opt(X_s,Y_s,Lambda)
-        
         L1=recover_indice(X_indice,Y_indice,piRow)
-        #L2=recover_indice(Y_indice,X_indice,piCol)
         opt_cost_list[epoch]=obj
         opt_plan_X_list[epoch]=L1
-        #opt_plan_Y_list[epoch]=L2
-        #sopt_dist=np.sum(opt_cost_list)/n_projections
-        sopt_dist=opt_cost_list.sum()/n_projections
-    return sopt_dist,opt_plan_X_list,X_projections,Y_projections
+    return opt_plan_X_list,X_projections,Y_projections
 
 
 
