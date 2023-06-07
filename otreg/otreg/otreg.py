@@ -94,7 +94,7 @@ def TPS(src_pts: np.ndarray,
         eps: float = 5e-4,
         record_indices: List[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[np.ndarray]]:
     """
-    Implements the Thin Plate Spline (TPS) algorithm for optimal transport.
+    with TPS kernel
 
     Parameters:
     src_pts (np.ndarray): The source points.
@@ -185,7 +185,7 @@ def Gaussian(src_pts: np.ndarray,
                   sigma2: float = 1e-4,
                   record_indices: List[int] = None) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Implements the main Gaussian algorithm for optimal transport.
+    with Gaussian kernel
 
     Parameters:
     src_pts (np.ndarray): The source points.
