@@ -450,7 +450,7 @@ def recover_rotation_du(X,Y):
 
 # method of spot_boneel 
 @nb.njit(['Tuple((float64[:,:,:],float64[:],float64[:,:]))(float64[:,:],float64[:,:],int64,int64)'])
-def spot_bonneel(S,T,n_projections=20,n_iterations=200):
+def spot_bonneel(S,T,n_projection=20,n_iterations=200):
     
     '''
     Parameters: 
@@ -459,7 +459,7 @@ def spot_bonneel(S,T,n_projections=20,n_iterations=200):
         source data 
     T: (n,d) numpy array, float64
         target data
-    n_projections: int64
+    n_projection: int64
         number of projections in each iteration 
     n_iterations: int64
         total number of iterations
@@ -495,7 +495,7 @@ def spot_bonneel(S,T,n_projections=20,n_iterations=200):
     for i in range(n_iterations):
 #        print('i',i)
 
-        projections=random_projections(d,n_projections,1)
+        projections=random_projections(d,n_projection,1)
         
 # #        print('start1')
         T_hat=X_correspondence_pot(T_hat,T,projections)
@@ -1159,10 +1159,10 @@ def rotation_re_T(theta):
 
 @nb.njit(parallel=True,fastmath=True,cache=True)
 def opt_plans(X_projections,Y_projections,Lambda_list):
-    n_projections,n=X_projections.shape
-    opt_plan_list=np.zeros((n_projections,n),dtype=np.int64)
-    opt_cost_list=np.zeros(n_projections)
-    for epoch in nb.prange(n_projections): #enumerate(zip(X_projections,Y_projections,Lambda_list)):
+    n_projection,n=X_projections.shape
+    opt_plan_list=np.zeros((n_projection,n),dtype=np.int64)
+    opt_cost_list=np.zeros(n_projection)
+    for epoch in nb.prange(n_projection): #enumerate(zip(X_projections,Y_projections,Lambda_list)):
         X_theta,Y_theta,Lambda = X_projections[epoch],Y_projections[epoch],Lambda_list[epoch]
         # X_indice,Y_indice=X_theta.argsort(),Y_theta.argsort()
         # X_s,Y_s=X_theta[X_indice],Y_theta[Y_indice]
@@ -1183,7 +1183,7 @@ def choose_kernel(kernel):
     return Phi,eps
 
 
-def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration)/10,threshold=0.8):
+def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2000,record_index=[0,10,50,100,150,180,199],start_epoch=200,threshold=0.8):
   # input kernel: method name, control point, sigma2, epsilon
   if len(kernel[1])==0:
      kernel[1]=X.copy()
@@ -1212,15 +1212,15 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=
   epoch=0
   while epoch<n_iteration:
     R_pre,beta_pre=R_torch.detach().numpy().copy(),beta_torch.detach().numpy().copy(),
-    projections_torch=torch.from_numpy(random_projections(D,n_projections,1))
+    projections_torch=torch.from_numpy(random_projections(D,n_projection,1))
     Yhat_projections_torch,Y_projections_torch=projections_torch.mm(Yhat_torch.T),projections_torch.mm(Y_torch.T)
     (Yhat_projections_s,_),(Y_projections_s,_)=Yhat_projections_torch.sort(),Y_projections_torch.sort()  
-    Lambda_list=np.full(n_projections,Lambda)
+    Lambda_list=np.full(n_projection,Lambda)
     _,opt_plan_list=opt_plans(Yhat_projections_s.detach().numpy(),Y_projections_s.numpy(),Lambda_list)
     opt_plan_list_torch=torch.from_numpy(opt_plan_list)
     obj_cost_list=[torch.sum((Yhat_theta[L>=0]-Y_theta[L[L>=0]])**2) for (L,Yhat_theta,Y_theta) in zip(opt_plan_list_torch,Yhat_projections_s,Y_projections_s)]
-    obj_cost=sum(obj_cost_list)/n_projections
-    mass=np.sum(opt_plan_list>=0)/n_projections
+    obj_cost=sum(obj_cost_list)/n_projection
+    mass=np.sum(opt_plan_list>=0)/n_projection
     mass_diff=mass-N0
     Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
     optimizer_rigid.zero_grad(),optimizer_nonrigid.zero_grad()
@@ -1238,7 +1238,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=
     epoch+=1
   return R_list,beta_list,alpha_list,Phi
 
-def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=1200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   # input kernel: method name, control point, sigma2, epsilon
   if len(kernel[1])==0:
      kernel[1]=X.copy()
@@ -1256,7 +1256,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration
   R_list,beta_list,alpha_list=list(),list(),list()
   epoch=0
   while epoch<n_iteration:
-    projections=random_projections(D,n_projections,1)
+    projections=random_projections(D,n_projection,1)
     #Yhat_pre=Yhat.copy()
     R_pre,beta_pre=R.copy(),beta.copy()
     domain_sum=np.full(N1,False)
@@ -1300,7 +1300,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration
 
 
 
-def SOPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def SOPT_TPS(X,Y,N0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   X_bar=np.hstack((np.ones((X.shape[0],1)),X))
   Phi=kernel_matrix_TPS(C,X,D=2) 
   N1,D=X.shape
@@ -1314,11 +1314,14 @@ def SOPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,
   Lambda=4*np.sum((vec_mean(Y)-vec_mean(X))**2)
   Delta,lower_bound=Lambda/8,Lambda/10000
   B_list,alpha_list=list(),list()   
-  # initlize 
+
+
   epoch=0
+
+
   while epoch<n_iteration:
     B_pre=B.copy()
-    projections=random_projections(D,n_projections,1)
+    projections=random_projections(D,n_projection,1)
     #Yhat_pre=Yhat.copy()
     R_pre,beta_pre,Yhat_pre=R.copy(),beta.copy(),Yhat.copy()
     domain_sum=np.full(N1,False)
@@ -1351,7 +1354,7 @@ def SOPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,
     epoch+=1
   return B_list,alpha_list,Phi
 
-def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   if len(kernel[1])==0:
      kernel[1]=X.copy()
   Phi,eps=choose_kernel(kernel)
@@ -1366,6 +1369,8 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=
   R_list,beta_list,alpha_list=list(),list(),list()
   # period to record previous model: 
   period=10
+
+  
   while epoch<n_iteration:
     if epoch%period==0:
       R_pre,beta_pre=R.copy(),beta.copy()
@@ -1398,7 +1403,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=
 
   
 
-def OPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def OPT_TPS(X,Y,N0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   N1,D=X.shape
   C=X.copy()
   Phi=kernel_matrix_TPS(C,X,D=2)
