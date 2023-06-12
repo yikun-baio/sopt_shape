@@ -1172,7 +1172,7 @@ def opt_plans(X_projections,Y_projections,Lambda_list):
     return opt_cost_list,opt_plan_list
 
 
-def choose_kernel(kernel):
+def choose_kernel(kernel,X):
     if kernel[0]=='Gaussian':
       C,sigma2,eps=kernel[1],kernel[2],kernel[3]
       Phi=kernel_matrix_Gaussian(C,X,sigma2) 
@@ -1187,7 +1187,8 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
   # input kernel: method name, control point, sigma2, epsilon
   if len(kernel[1])==0:
      kernel[1]=X.copy()
-  Phi,eps=choose_kernel(kernel)
+  C=kernel[1]
+  Phi,eps=choose_kernel(kernel,X)
 
   Phi_torch,X_torch,Y_torch=torch.from_numpy(Phi),torch.from_numpy(X),torch.from_numpy(Y) 
   N1,D=X.shape
@@ -1207,8 +1208,6 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
   R_list,beta_list,alpha_list=list(),list(),list()
 
   optimizer_rigid,optimizer_nonrigid = torch.optim.Adam([theta_torch,beta_torch], lr=0.1),torch.optim.Adam([alpha_torch], lr=0.1/N1) 
-
-
   epoch=0
   while epoch<n_iteration:
     R_pre,beta_pre=R_torch.detach().numpy().copy(),beta_torch.detach().numpy().copy(),
@@ -1242,7 +1241,8 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
   # input kernel: method name, control point, sigma2, epsilon
   if len(kernel[1])==0:
      kernel[1]=X.copy()
-  Phi,eps=choose_kernel(kernel)
+  C=kernel[1]
+  Phi,eps=choose_kernel(kernel,X)
 
   N1,D=X.shape
   # initlize 
@@ -1300,8 +1300,9 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
 
 
 
-def SOPT_TPS(X,Y,N0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
+def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+  C=X.copy()
   Phi=kernel_matrix_TPS(C,X,D=2) 
   N1,D=X.shape
   # initlize 
@@ -1357,7 +1358,8 @@ def SOPT_TPS(X,Y,N0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,1
 def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   if len(kernel[1])==0:
      kernel[1]=X.copy()
-  Phi,eps=choose_kernel(kernel)
+  C=kernel[1]
+  Phi,eps=choose_kernel(kernel,X)
   N1,D=X.shape
 
   # initlize 
@@ -1403,7 +1405,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
 
   
 
-def OPT_TPS(X,Y,N0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
+def OPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   N1,D=X.shape
   C=X.copy()
   Phi=kernel_matrix_TPS(C,X,D=2)
