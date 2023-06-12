@@ -1183,8 +1183,10 @@ def choose_kernel(kernel):
     return Phi,eps
 
 
-def SOPT_GD(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration)/10,threshold=0.8):
+def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration)/10,threshold=0.8):
   # input kernel: method name, control point, sigma2, epsilon
+  if len(kernel[1])==0:
+     kernel[1]=X.copy()
   Phi,eps=choose_kernel(kernel)
 
   Phi_torch,X_torch,Y_torch=torch.from_numpy(Phi),torch.from_numpy(X),torch.from_numpy(Y) 
@@ -1236,8 +1238,10 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iter
     epoch+=1
   return R_list,beta_list,alpha_list,Phi
 
-def SOPT_RBF(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=1200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=1200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
   # input kernel: method name, control point, sigma2, epsilon
+  if len(kernel[1])==0:
+     kernel[1]=X.copy()
   Phi,eps=choose_kernel(kernel)
 
   N1,D=X.shape
@@ -1347,7 +1351,9 @@ def SOPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,
     epoch+=1
   return B_list,alpha_list,Phi
 
-def OPT_RBF(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+  if len(kernel[1])==0:
+     kernel[1]=X.copy()
   Phi,eps=choose_kernel(kernel)
   N1,D=X.shape
 
