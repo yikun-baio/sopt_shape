@@ -911,7 +911,6 @@ def recover_alpha_cuda(Phi,y_prime,epsilon=1e-2):
 
 
 #@nb.njit()
-#@nb.njit()
 def TPS_recover_parameter(Phi_T,X_bar,Y,epsilon):
     n,d=X_bar.shape
     n,K=Phi_T.shape
@@ -1318,8 +1317,6 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,
 
 
   epoch=0
-
-
   while epoch<n_iteration:
     B_pre=B.copy()
     projections=random_projections(D,n_projection,1)
@@ -1421,7 +1418,7 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,5
   period=10
   while epoch<n_iteration:
     if epoch%period==0:
-      R_pre,beta_pre=R.copy(),beta.copy()
+      B_pre=B.copy()
     M=cost_matrix_d(Yhat,Y)
     cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
     p1_hat=np.sum(gamma,1)
@@ -1443,5 +1440,5 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,5
     if epoch in record_index:
       B_list.append(B),alpha_list.append(alpha)
     epoch+=1
-  return alpha_list,B_list,Phi
+  return B_list,alpha_list,Phi
 
