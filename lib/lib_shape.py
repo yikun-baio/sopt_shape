@@ -1001,346 +1001,434 @@ def make_plot(X,Y):
     plt.show()
 
 
+def opt_pr(mu, nu, M, mass, **kwargs):
+    """
+    Solves the partial optimal transport problem for the quadratic cost
+    and returns the OT plan
+
+    The function considers the following problem:
+
+    .. math::
+        \gamma = \mathop{\arg \min}_\gamma \quad \langle \gamma, \mathbf{M} \rangle_F
+
+    .. math::
+        s.t. \ \gamma \mathbf{1} &\leq \mathbf{a}
+
+             \gamma^T \mathbf{1} &\leq \mathbf{b}
+
+             \gamma &\geq 0
+
+             \mathbf{1}^T \gamma^T \mathbf{1} = m &\leq \min\{\|\mathbf{a}\|_1, \|\mathbf{b}\|_1\}
 
 
-def sopt_Gaussian(X,Y,N0,n_projections=1000,sigma2=1e-6,eps=1e-6, record_index=[0,20,100,200,400,500,700,900]):
-    N1,D=X.shape
-    C=X.copy()
-    Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+    where :
 
-    # initlize 
-    R=np.eye(D)    
-    S=1.0 #np.eye(d)
-    beta=vec_mean(Y)-vec_mean(S*X.dot(R)) 
-    alpha=np.zeros((C.shape[0],D))
+    - :math:`\mathbf{M}` is the metric cost matrix
+    - :math:`\mathbf{a}` and :math:`\mathbf{b}` are source and target unbalanced distributions
+    - `m` is the amount of mass to be transported
+
+    Parameters
+    ----------
+    a : np.ndarray (dim_a,)
+        Unnormalized histogram of dimension `dim_a`
+    b : np.ndarray (dim_b,)
+        Unnormalized histograms of dimension `dim_b`
+    M : np.ndarray (dim_a, dim_b)
+        cost matrix for the quadratic cost
+    m : float, optional
+        amount of mass to be transported
+    nb_dummies : int, optional, default:1
+        number of reservoir points to be added (to avoid numerical
+        instabilities, increase its value if an error is raised)
+    log : bool, optional
+        record log if True
+    **kwargs : dict
+        parameters can be directly passed to the emd solver
+
+
+    .. warning::
+        When dealing with a large number of points, the EMD solver may face
+        some instabilities, especially when the mass associated to the dummy
+        point is large. To avoid them, increase the number of dummy points
+        (allows a smoother repartition of the mass over the points).
+
+
+    Returns
+    -------
+    gamma : (dim_a, dim_b) ndarray
+        Optimal transportation matrix for the given parameters
+    log : dict
+        log dictionary returned only if `log` is `True`
+
+
+    Examples
+    --------
+
+    >>> import ot
+    >>> a = [.1, .2]
+    >>> b = [.1, .1]
+    >>> M = [[0., 1.], [2., 3.]]
+    >>> np.round(partial_wasserstein(a,b,M), 2)
+    array([[0.1, 0. ],
+           [0. , 0.1]])
+    >>> np.round(partial_wasserstein(a,b,M,m=0.1), 2)
+    array([[0.1, 0. ],
+           [0. , 0. ]])
+
+    References
+    ----------
+    ..  [28] Caffarelli, L. A., & McCann, R. J. (2010) Free boundaries in
+        optimal transport and Monge-Ampere obstacle problems. Annals of
+        mathematics, 673-730.
+    ..  [29] Chapel, L., Alaya, M., Gasso, G. (2020). "Partial Optimal
+        Transport with Applications on Positive-Unlabeled Learning".
+        NeurIPS.
+
+    See Also
+    --------
+    ot.partial.partial_wasserstein_lagrange: Partial Wasserstein with
+    regularization on the marginals
+    ot.partial.entropic_partial_wasserstein: Partial Wasserstein with a
+    entropic regularization parameter
+    """
     
-    #paramlist=[]
-    projections=random_projections(D,n_projections,1)
-    mass_diff=0
-    #b=0
-    b=np.log((N1-N0+1)/1)
-    Lambda=60*np.sum((vec_mean(Y)-vec_mean(X))**2)
-    Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
-    # make_plot(Y_hat,Y)
-
-    Domain_org=arange(0,N1)
-    Delta=Lambda/8
-    lower_bound=Lambda/10000
-    L=Domain_org.copy()
-
-    Yhat_list=list()
-    for (epoch,theta) in enumerate(projections):    
-        # compute correspondence 
-        Y_hat_theta=np.dot(theta,Y_hat.T)
-        Y_theta=np.dot(theta,Y.T)
-
-        Y_hat_indice=Y_hat_theta.argsort()
-        Y_indice=Y_theta.argsort()
-        Y_hat_s=Y_hat_theta[Y_hat_indice]
-        Y_s=Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
-        L=piRow.copy()
-        L=recover_indice(Y_hat_indice,Y_indice,L)
-        Domain=Domain_org[L>=0]
-
-        #move selected Y_hat
-        mass=Domain.shape[0]
-        # if Domain.shape[0]>=1:
-        Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
-
-        # find optimal R,S,beta, conditonal on alpha
-        Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
-        #Y_prime2=Y_hat-Phi.dot(alpha)
-        R,S=recover_rotation(Y_prime2,X[Domain])
-        beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R)*S)
-
-        # update Y_hat by alpha, Phi 
-        Y_prime=Y_hat[Domain]-X[Domain].dot(R)*S-beta
-        alpha=recover_alpha(Phi[Domain],Y_prime)
-        # print('error from alpha is',np.linalg.norm(Phi.dot(alpha)[Domain]-Y_prime))
-
-        # update selected points 
-        # model 1
-        Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
-
-        # update lambda 
-        N=(N1-N0)*1/(1+b*(epoch/500))+N0
-        mass_diff=mass-N
-        if mass_diff>N*0.009:
-            Lambda-=Delta 
-        if mass_diff<-N*0.003:
-            Lambda+=Delta
-            Delta=Lambda*1/8
-        if Lambda<Delta:
-            Lambda=Delta
-            Delta=Delta*1/2
-        if Delta<lower_bound:
-            Delta=lower_bound
-        if epoch in record_index or epoch==n_projections-1:
-            Yhat_list.append(Y_hat)
-            
-        # if epoch==0 or epoch%5==0 and epoch<=40:
-        #     make_plot(Y_hat,Y)
-        #     print(len(Yhat_list))
-        #     print(Yhat_list[-1].shape)
-        # elif epoch%100==0: 
-        #     make_plot(Y_hat,Y)
-
-    return Yhat_list,(Phi,alpha,S,R,beta)
+    Lambda,A=1.0,1.0
+    n,m=M.shape 
+    mu1,nu1=np.zeros(n+1),np.zeros(m+1)
+    mu1[0:n],nu1[0:m]=mu,nu
+    mu1[-1],nu1[-1]=np.sum(nu)-mass,np.sum(mu)-mass
+    M1=np.zeros((n+1,m+1),dtype=np.float64)
+    M1[0:n,0:m]=M
+    M1[:,m],M1[n,:]=Lambda,Lambda
+    M1[n,m]=2*Lambda+A
 
 
 
+    # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
+    # result_code_string = check_result(result_code)
+    gamma1=ot.lp.emd(mu1,nu1,M1,**kwargs)
+    gamma=gamma1[0:n,0:m]
+    cost=np.sum(M*gamma)
 
-def sopt_Gaussian_cuda(X,Y,N0,n_projections=1000,sigma2=1e-4, eps=1e-4, record_index=[0,20,100,200,400,500,700,900]):
-    N1,D=X.shape
-    C=X.copy()
-    Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+    return cost,gamma
+def update_lambda(Lambda,Delta,mass_diff,N0,lower_bound):
+  if mass_diff>N0*0.003:
+    Lambda-=Delta 
+  if mass_diff<-N0*0.003:
+    Lambda+=Delta
+    Delta=Lambda*1/8
+  if Lambda<Delta:
+    Lambda=Delta
+    Delta=Delta*1/2
+  if Delta<lower_bound:
+    Delta=lower_bound
+  return Lambda,Delta
 
-    # initlize 
-    R=np.eye(D)    
-    S=1.0 #np.eye(d)
-    beta=vec_mean(Y)-vec_mean(S*X.dot(R)) 
-    alpha=np.zeros((C.shape[0],D))
+def rotation_re_T(theta):
+    """
+    generate (3,3) rotation matrix along  
     
-    #paramlist=[]
+    Parameter:
+    -----
+    cos_x,sin_x: float,float
+                cos(x), sin(x) for some angle x
+    cos_y,sin_y: float, float
+                cos(y), sin(y) for some angle y
+    cos_z,sin_z: float, float
+                cos(z), sin(z) for some angle z
+    
+    Returns: 
+    ------
+    M: torch.tensor shape (3,3) float
+             rotation with rspect to z-axis, then y-axis, then x-axis
+    """
+    cos_x,cos_y,cos_z=torch.cos(theta)
+    sin_x,sin_y,sin_z=torch.sin(theta)
+    M=torch.zeros((3,3),dtype=torch.float64)
+    M[0,0]=cos_y*cos_z
+    M[0,1]=-cos_y*sin_z
+    M[0,2]=sin_y
+    M[1,0]=sin_x*sin_y*cos_z+cos_x*sin_z
+    M[1,1]=-sin_x*sin_y*sin_z+cos_x*cos_z
+    M[1,2]=-sin_x*cos_y
+    M[2,0]=-cos_x*sin_y*cos_z+sin_x*sin_z
+    M[2,1]=cos_x*sin_y*sin_z+sin_x*cos_z 
+    M[2,2]=cos_x*cos_y
+    return M
+
+
+@nb.njit(parallel=True,fastmath=True,cache=True)
+def opt_plans(X_projections,Y_projections,Lambda_list):
+    n_projections,n=X_projections.shape
+    opt_plan_list=np.zeros((n_projections,n),dtype=np.int64)
+    opt_cost_list=np.zeros(n_projections)
+    for epoch in nb.prange(n_projections): #enumerate(zip(X_projections,Y_projections,Lambda_list)):
+        X_theta,Y_theta,Lambda = X_projections[epoch],Y_projections[epoch],Lambda_list[epoch]
+        # X_indice,Y_indice=X_theta.argsort(),Y_theta.argsort()
+        # X_s,Y_s=X_theta[X_indice],Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=solve_opt(X_theta,Y_theta,Lambda)
+        # L1=recover_indice(X_indice,Y_indice,piRow)
+        opt_cost_list[epoch],opt_plan_list[epoch]=obj,piRow
+    return opt_cost_list,opt_plan_list
+
+
+def choose_kernel(kernel):
+    if kernel[0]=='Gaussian':
+      C,sigma2,eps=kernel[1],kernel[2],kernel[3]
+      Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+    elif kernel[0]=='TPS': 
+      kernel[1]=='TPS'
+      C,_,eps=kernel[1],kernel[2],kernel[3]
+      Phi=kernel_matrix_TPS(C,X)
+    return Phi,eps
+
+
+def SOPT_GD(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration)/10,threshold=0.8):
+  # input kernel: method name, control point, sigma2, epsilon
+  Phi,eps=choose_kernel(kernel)
+
+  Phi_torch,X_torch,Y_torch=torch.from_numpy(Phi),torch.from_numpy(X),torch.from_numpy(Y) 
+  N1,D=X.shape
+  # initlize 
+  theta_torch=torch.zeros(D,requires_grad=True)
+  R_torch=rotation_re_T(theta_torch)
+  beta_torch,alpha_torch=torch.mean(Y_torch,0)-torch.mean(X_torch.mm(R_torch),0),torch.zeros((C.shape[0],D),requires_grad=True,dtype=torch.float64)
+  beta_torch=beta_torch.clone().detach().requires_grad_(True)
+  Yhat_torch=Phi_torch.mm(alpha_torch)+X_torch.mm(R_torch)+beta_torch #Phi.dot(alpha)+X.dot(R)+beta 
+
+  # mass and Lambda setting 
+  mass_diff=0
+  Lambda=4*np.sum((np.mean(Y,0)-np.mean(X,0))**2)
+  Delta,lower_bound=Lambda/8,Lambda/10000
+
+  # record parameters 
+  R_list,beta_list,alpha_list=list(),list(),list()
+
+  optimizer_rigid,optimizer_nonrigid = torch.optim.Adam([theta_torch,beta_torch], lr=0.1),torch.optim.Adam([alpha_torch], lr=0.1/N1) 
+
+
+  epoch=0
+  while epoch<n_iteration:
+    R_pre,beta_pre=R_torch.detach().numpy().copy(),beta_torch.detach().numpy().copy(),
+    projections_torch=torch.from_numpy(random_projections(D,n_projections,1))
+    Yhat_projections_torch,Y_projections_torch=projections_torch.mm(Yhat_torch.T),projections_torch.mm(Y_torch.T)
+    (Yhat_projections_s,_),(Y_projections_s,_)=Yhat_projections_torch.sort(),Y_projections_torch.sort()  
+    Lambda_list=np.full(n_projections,Lambda)
+    _,opt_plan_list=opt_plans(Yhat_projections_s.detach().numpy(),Y_projections_s.numpy(),Lambda_list)
+    opt_plan_list_torch=torch.from_numpy(opt_plan_list)
+    obj_cost_list=[torch.sum((Yhat_theta[L>=0]-Y_theta[L[L>=0]])**2) for (L,Yhat_theta,Y_theta) in zip(opt_plan_list_torch,Yhat_projections_s,Y_projections_s)]
+    obj_cost=sum(obj_cost_list)/n_projections
+    mass=np.sum(opt_plan_list>=0)/n_projections
+    mass_diff=mass-N0
+    Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
+    optimizer_rigid.zero_grad(),optimizer_nonrigid.zero_grad()
+    obj_cost.backward()
+    if epoch>=start_epoch and np.linalg.norm(R_torch.detach().numpy()-R_pre)+np.linalg.norm(beta_torch.detach().numpy()-beta_pre)<thresh_hold:
+        #print('non rigid')
+        optimizer_rigid.step(),optimizer_nonrigid.step()
+    else:
+      optimizer_rigid.step()
+    # update Yhat 
+    R_torch=rotation_re_T(theta_torch)
+    Yhat_torch=Phi_torch.mm(alpha_torch)+X_torch.mm(R_torch)+beta_torch
+    if epoch in record_index:
+      R_list.append(R_torch.detach().numpy()),beta_list.append(beta_torch.detach().numpy()),alpha_list.append(alpha_torch.detach().numpy())
+    epoch+=1
+  return R_list,beta_list,alpha_list,Phi
+
+def SOPT_RBF(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=1200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+  # input kernel: method name, control point, sigma2, epsilon
+  Phi,eps=choose_kernel(kernel)
+
+  N1,D=X.shape
+  # initlize 
+  R,alpha=np.eye(D),np.zeros((C.shape))    
+  beta=vec_mean(Y)-vec_mean(X.dot(R)) 
+  mass_diff=0
+  Lambda=4*np.sum((vec_mean(Y)-vec_mean(X))**2)
+  Yhat=Phi.dot(alpha)+X.dot(R)+beta
+
+  Delta,lower_bound=Lambda/8,Lambda/10000
+  R_list,beta_list,alpha_list=list(),list(),list()
+  epoch=0
+  while epoch<n_iteration:
     projections=random_projections(D,n_projections,1)
-    mass_diff=0
-    #b=0
-    b=np.log((N1-N0+1)/1)
-    Lambda=60*np.sum((vec_mean(Y)-vec_mean(X))**2)
-    Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
-    # make_plot(Y_hat,Y)
-
-    Domain_org=arange(0,N1)
-    Delta=Lambda/8
-    lower_bound=Lambda/10000
-    L=Domain_org.copy()
-
-    Yhat_list=list()
-    for (epoch,theta) in enumerate(projections):    
-        # compute correspondence 
-        Y_hat_theta=np.dot(theta,Y_hat.T)
-        Y_theta=np.dot(theta,Y.T)
-
-        Y_hat_indice=Y_hat_theta.argsort()
-        Y_indice=Y_theta.argsort()
-        Y_hat_s=Y_hat_theta[Y_hat_indice]
-        Y_s=Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=solve(Y_hat_s,Y_s,Lambda)
-        L=piRow.astype(np.int64)
-        L=recover_indice(Y_hat_indice,Y_indice,L)
-        Domain=Domain_org[L>=0]
-
-        #move selected Y_hat
-        mass=Domain.shape[0]
-        # if Domain.shape[0]>=1:
-        Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
-
-        # find optimal R,S,beta, conditonal on alpha
-        Y_prime2=Y_hat[Domain]-Phi[Domain].dot(alpha)
-        R,S=recover_rotation_cuda(Y_prime2,X[Domain])
-        beta=np.mean(Y_prime2,0)-np.mean(X[Domain].dot(R)*S,0)
-
-        # update Y_hat by alpha, Phi 
-        Y_prime=Y_hat[Domain]-X[Domain].dot(R)*S-beta
-        alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
-        # print('error from alpha is',np.linalg.norm(Phi.dot(alpha)[Domain]-Y_prime))
-
-        # update selected points 
-        # model 1
-        Y_hat=Phi.dot(alpha)+S*X.dot(R)+beta
-
-        # update lambda 
-        N=(N1-N0)*1/(1+b*(epoch/500))+N0
-        mass_diff=mass-N
-        if mass_diff>N*0.009:
-            Lambda-=Delta 
-        if mass_diff<-N*0.003:
-            Lambda+=Delta
-            Delta=Lambda*1/8
-        if Lambda<Delta:
-            Lambda=Delta
-            Delta=Delta*1/2
-        if Delta<lower_bound:
-            Delta=lower_bound
-        if epoch in record_index or epoch==n_projections-1:
-            Yhat_list.append(Y_hat)
- 
-        # if epoch==0 or epoch%5==0 and epoch<=40:
-        #     make_plot(Y_hat,Y)
-        #     print(len(Yhat_list))
-        #     print(Yhat_list[-1].shape)
-        # elif epoch%100==0: 
-        #     make_plot(Y_hat,Y)
-
-    return Yhat_list,(Phi,alpha,S,R,beta)
+    #Yhat_pre=Yhat.copy()
+    R_pre,beta_pre=R.copy(),beta.copy()
+    domain_sum=np.full(N1,False)
+    for (epoch2,theta) in enumerate(projections):
+        Yhat_theta,Y_theta=np.dot(theta,Yhat.T),np.dot(theta,Y.T)
+        Yhat_indice,Y_indice=Yhat_theta.argsort(),Y_theta.argsort()
+        Yhat_s,Y_s=Yhat_theta[Yhat_indice],Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=solve_opt(Yhat_s,Y_s,Lambda)
+        L=recover_indice(Yhat_indice,Y_indice,piRow)
+        Domain,Range=L>=0,L[L>=0]
+        domain_sum=np.logical_or(Domain,domain_sum) 
+        Yhat[Domain]+=np.expand_dims(Y_theta[Range]-Yhat_theta[Domain],1)*theta
+        mass=np.sum(Domain)
+        mass_diff=mass-N0
+        Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
 
 
-def sopt_TPS(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80,90,100,150,200,250,300]):
-    N1,D=X.shape
-    C=X.copy()
-    Phi0=kernel_matrix_TPS(C,X,D) 
-    X_bar=np.hstack((np.ones((X.shape[0],1)),X))
-    # initlize 
-    R=np.eye(D)    
-    S=1.0
-    beta=np.zeros(3) #vec_mean(Y)-vec_mean(X.dot(S).dot(R)) 
-    alpha=np.zeros((C.shape[0],D))
-    B=np.vstack((beta,R))
 
-    #paramlist=[]
+    # find optimal R,S,beta, conditonal on alpha
+    Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
+
+
+    # update Yhat by R,beta
+  
+    if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
+      R,S=recover_rotation(Y_prime2,X[domain_sum])
+      beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
+      Y_prime=Yhat[domain_sum]-X[domain_sum].dot(R)-beta
+      alpha=recover_alpha_cuda(Phi[domain_sum],Y_prime,eps)
+      Yhat=Phi.dot(alpha)+X.dot(R)+beta
+    else:
+      R,S=recover_rotation(Y_prime2,X[domain_sum])
+      beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
+
+       
+    Yhat=Phi.dot(alpha)+X.dot(R)+beta    
+    if epoch in record_index:
+      R_list.append(R),beta_list.append(beta),alpha_list.append(alpha)
+    epoch+=1
+  return R_list,beta_list,alpha_list,Phi
+
+
+
+def SOPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+  X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+  Phi=kernel_matrix_TPS(C,X,D=2) 
+  N1,D=X.shape
+  # initlize 
+  R=np.eye(D)
+  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+  B=np.vstack((beta,R))
+  Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta 
+
+  mass_diff=0
+  Lambda=4*np.sum((vec_mean(Y)-vec_mean(X))**2)
+  Delta,lower_bound=Lambda/8,Lambda/10000
+  B_list,alpha_list=list(),list()   
+  # initlize 
+  epoch=0
+  while epoch<n_iteration:
+    B_pre=B.copy()
     projections=random_projections(D,n_projections,1)
-    mass_diff=0
-    b=np.log((N1-N0+1)/1)
-    Lambda=60*np.sum((Y.mean(0)-X.mean(0))**2)
-    Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
-    # make_plot(Y_hat,Y)
+    #Yhat_pre=Yhat.copy()
+    R_pre,beta_pre,Yhat_pre=R.copy(),beta.copy(),Yhat.copy()
+    domain_sum=np.full(N1,False)
+    for (epoch2,theta) in enumerate(projections):
+        Yhat_theta,Y_theta=np.dot(theta,Yhat.T),np.dot(theta,Y.T)
+        Yhat_indice,Y_indice=Yhat_theta.argsort(),Y_theta.argsort()
+        Yhat_s,Y_s=Yhat_theta[Yhat_indice],Y_theta[Y_indice]
+        obj,phi,psi,piRow,piCol=solve_opt(Yhat_s,Y_s,Lambda)
+        L=recover_indice(Yhat_indice,Y_indice,piRow)
+        Domain,Range=L>=0,L[L>=0]
+        domain_sum=np.logical_or(Domain,domain_sum) 
+        Yhat[Domain]+=np.expand_dims(Y_theta[Range]-Yhat_theta[Domain],1)*theta
+        mass=np.sum(Domain)
+        mass_diff=mass-N0
+        Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
 
-    Domain_org=arange(0,N1)
-    Delta=Lambda/8
-    lower_bound=Lambda/10000
-    L=Domain_org.copy()
+   
+    if epoch>=start_epoch and np.linalg.norm(B-B_pre)<thresh_hold:
+       alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
+    else:
+      # find optimal R,S,beta, conditonal on alpha    
+      Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
+      R,S=recover_rotation(Y_prime2,X[domain_sum])
+      beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R))
+      B=np.vstack((beta,R))
+      
+    Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+    if epoch in record_index:
+      B_list.append(B),alpha_list.append(alpha)    
+    epoch+=1
+  return B_list,alpha_list,Phi
 
-    Yhat_list=list()
-    for (epoch,theta) in enumerate(projections):
-        # compute correspondence 
-        Y_hat_theta=np.dot(theta,Y_hat.T)
-        Y_theta=np.dot(theta,Y.T)
+def OPT_RBF(X,Y,N0,kernel=['Gaussian',X.copy(),0.1,3.0],n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+  Phi,eps=choose_kernel(kernel)
+  N1,D=X.shape
 
-        Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
-        Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=solve_opt(Y_hat_s,Y_s,Lambda)
+  # initlize 
+  R=np.eye(D)
+  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+  Yhat=Phi.dot(alpha)+X.dot(R)+beta 
+  epoch=0
+  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
+  R_list,beta_list,alpha_list=list(),list(),list()
+  # period to record previous model: 
+  period=10
+  while epoch<n_iteration:
+    if epoch%period==0:
+      R_pre,beta_pre=R.copy(),beta.copy()
+    M=cost_matrix_d(Yhat,Y)
+    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
+    p1_hat=np.sum(gamma,1)
+    Domain=p1_hat>1e-10
+    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
+    Yhat[Domain]=BaryP
 
-        L=recover_indice(Y_hat_indice,Y_indice,L)
-        Domain=Domain_org[L>=0]
+    
+   
+    # find optimal R,S,beta, conditonal on alpha    
+    Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+    R,S=recover_rotation(Y_prime2,X[Domain])
+    beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
 
-        #move selected Y_hat
-        mass=Domain.shape[0]
-        Range=L[L>=0]
-        Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
+    if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
+      Y_prime=Yhat-X.dot(R)-beta
+      alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
 
-        # find optimal alpha, B
-        Phi_T,X_bar_select,Y_select=Phi0[Domain],X_bar[Domain],Y_hat[Domain]
-        alpha,B=TPS_recover_parameter(Phi_T,X_bar_select,Y_select,eps)
+    Yhat=Phi.dot(alpha)+X.dot(R)+beta
+    
+    epoch+=1
+    if epoch in record_index:
+      R_list.append(R),beta_list.append(beta),alpha_list.append(alpha)
+  return R_list,beta_list,alpha_list,Phi
 
+    
 
-        # update selected points 
-        # our model
-        Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
+  
 
-        
-        # update lambda 
-        N=(N1-N0)*1/(1+b*(epoch/500))+N0
-        mass_diff=mass-N
-        if mass_diff>N*0.009:
-            Lambda-=Delta 
-        if mass_diff<-N*0.003:
-            Lambda+=Delta
-            Delta=Lambda*1/8
-        if Lambda<Delta:
-            Lambda=Delta
-            Delta=Delta*1/2
-        if Delta<lower_bound:
-            Delta=lower_bound
-        
-        # recode point cloud in the process
-        if epoch in record_index or epoch==n_projections-1:
-            Yhat_list.append(Y_hat)
-            
-#         if epoch%5==0 and epoch<=40:
-#             make_plot(Y_hat,Y)
-#         elif epoch%100==0: 
-#             make_plot(Y_hat,Y)
-            
-        
-    return Yhat_list,(Phi0,alpha,B)
+def OPT_TPS(X,Y,N0,n_projections=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=int(n_iteration/10),threshold=0.8):
+  N1,D=X.shape
+  C=X.copy()
+  Phi=kernel_matrix_TPS(C,X,D=2)
+  X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+  # initlize 
+  R=np.eye(D)
+  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+  B=np.vstack((beta,R))
+  Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta 
+  epoch=0
+  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
+  alpha_list,B_list=list(),list()
+  period=10
+  while epoch<n_iteration:
+    if epoch%period==0:
+      R_pre,beta_pre=R.copy(),beta.copy()
+    M=cost_matrix_d(Yhat,Y)
+    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
+    p1_hat=np.sum(gamma,1)
+    Domain=p1_hat>1e-10
+    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
+    Yhat[Domain]=BaryP
 
+   
+    if epoch>=start_epoch and np.linalg.norm(B-B_pre):
+      alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
+    else:
+       # find optimal R,S,beta, conditonal on alpha    
+      Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+      R,S=recover_rotation(Y_prime2,X[Domain])
+      beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+      B=np.vstack((beta,R))
 
-def sopt_TPS_cuda(X,Y,N0,n_projections=300,eps=1e-4,record_index=[0,10,20,30,40,60,80,90,100,150,200,250,300]):
-    N1,D=X.shape
-    C=X.copy()
-    Phi0=kernel_matrix_TPS(C,X,D) 
-    X_bar=np.hstack((np.ones((X.shape[0],1)),X))
-    # initlize 
-    R=np.eye(D)    
-    S=1.0
-    beta=np.mean(Y,0)-np.mean(S*X.dot(R),0) 
-    alpha=np.zeros((C.shape[0],D))
-    B=np.vstack((beta,R))
-
-    #paramlist=[]
-    projections=random_projections(D,n_projections,1)
-    mass_diff=0
-    b=np.log((N1-N0+1)/1)
-    Lambda=60*np.sum((Y.mean(0)-X.mean(0))**2)
-    Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
-    # make_plot(Y_hat,Y)
-
-    Domain_org=np.arange(0,N1)
-    Delta=Lambda/8
-    lower_bound=Lambda/10000
-    L=Domain_org.copy()
-
-    Yhat_list=list()
-    for (epoch,theta) in enumerate(projections):
-        # print(epoch)
-        # compute correspondence 
-        Y_hat_theta=np.dot(theta,Y_hat.T)
-        Y_theta=np.dot(theta,Y.T)
-
-        Y_hat_indice,Y_indice=Y_hat_theta.argsort(),Y_theta.argsort()
-        Y_hat_s,Y_s=Y_hat_theta[Y_hat_indice],Y_theta[Y_indice]
-        obj,phi,psi,piRow,piCol=solve(Y_hat_s,Y_s,Lambda)
-        L=piRow.astype(np.int64)
-        L=recover_indice(Y_hat_indice,Y_indice,L)
-        Domain=Domain_org[L>=0]
-        # if Domain.shape[0]==0:
-        #   print('error')
-
-        #move selected Y_hat
-        mass=Domain.shape[0]
-        Range=L[L>=0]
-        if Domain.shape[0]>0:
-            Y_hat[Domain]+=np.expand_dims(Y_theta[Range]-Y_hat_theta[Domain],1)*theta
-
-        # find optimal alpha, B
-        Phi_T,X_bar_select,Y_select=Phi0[Domain][:,Domain],X_bar[Domain],Y_hat[Domain]
-        #Phi_T,X_bar_select,Y_select=Phi0,X_bar,Y_hat
-        
-        alpha_s,B=TPS_recover_parameter(Phi_T,X_bar_select,Y_select,eps)
-        alpha=alpha_s
-
-        # update selected points 
-        # our model
-        Y_hat=Phi0.dot(alpha)+X_bar.dot(B)
-
-        
-        # update lambda 
-        N=(N1-N0)*1/(1+b*(epoch/500))+N0
-        mass_diff=mass-N
-        if mass_diff>N*0.009:
-            Lambda-=Delta 
-        if mass_diff<-N*0.003:
-            Lambda+=Delta
-            Delta=Lambda*1/8
-        if Lambda<Delta:
-            Lambda=Delta
-            Delta=Delta*1/2
-        if Delta<lower_bound:
-            Delta=lower_bound
-        
-        # recode point cloud in the process
-        if epoch in record_index or epoch==n_projections-1:
-            Yhat_list.append(Y_hat)
-        if epoch<=5:
-            make_plot(Y_hat,Y)   
-#         if epoch%5==0 and epoch<=40:
-#             make_plot(Y_hat,Y)
-#         elif epoch%100==0: 
-#             make_plot(Y_hat,Y)
-            
-        
-    return Yhat_list,(Phi0,alpha,B)
+    Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+    if epoch in record_index:
+      B_list.append(B),alpha_list.append(alpha)
+    epoch+=1
+  return alpha_list,B_list,Phi
 
