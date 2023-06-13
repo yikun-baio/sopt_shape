@@ -1266,9 +1266,6 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
     
     if start_epoch==None:
         start_epoch=int(n_iteration/10)
-
-
-
     epoch=0
 
     while epoch<n_iteration:
@@ -1454,18 +1451,18 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         Domain=p1_hat>1e-10
         BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
         Yhat[Domain]=BaryP
-    if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
-        alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
-    else:
-        # find optimal R,S,beta, conditonal on alpha    
-        Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-        R,S=recover_rotation_cuda(Y_prime2,X[Domain])
-        beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
-        B=np.vstack((beta,R))
+        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
+            alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
+        else:
+            # find optimal R,S,beta, conditonal on alpha    
+            Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+            R,S=recover_rotation_cuda(Y_prime2,X[Domain])
+            beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+            B=np.vstack((beta,R))
 
-        Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
-    if epoch in record_index:
-        B_list.append(B),alpha_list.append(alpha)
-    epoch+=1
+            Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+        if epoch in record_index:
+            B_list.append(B),alpha_list.append(alpha)
+        epoch+=1
     return (B_list,alpha_list,Phi),record_index
 
