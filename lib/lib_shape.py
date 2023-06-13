@@ -982,7 +982,7 @@ def init_center(X,Y,K,eps):
 
     
 
-def make_plot(X,Y):
+def make_plot(X,Y,path=None):
     fig = plt.figure(figsize=(2*800/72,800/72))    
     ax = fig.add_subplot(projection='3d')
     x=X[:,0]
@@ -997,6 +997,8 @@ def make_plot(X,Y):
     
     ax.set_xlim([-1,1]);ax.set_ylim([-1,1]);ax.set_zlim([-1,1])
     ax.view_init(10, 45)
+    if path!=None:
+       plt.savefig(path)
     plt.show()
 
 
@@ -1234,7 +1236,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     if epoch in record_index:
       R_list.append(R_torch.detach().numpy()),beta_list.append(beta_torch.detach().numpy()),alpha_list.append(alpha_torch.detach().numpy())
     epoch+=1
-  return R_list,beta_list,alpha_list,Phi
+  return R_list,beta_list,alpha_list,Phi,record_index
 
 def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   # input kernel: method name, control point, sigma2, epsilon
@@ -1272,8 +1274,6 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
         mass_diff=mass-N0
         Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
 
-
-
     # find optimal R,S,beta, conditonal on alpha
     Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
 
@@ -1295,7 +1295,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
     if epoch in record_index:
       R_list.append(R),beta_list.append(beta),alpha_list.append(alpha)
     epoch+=1
-  return R_list,beta_list,alpha_list,Phi
+  return R_list,beta_list,alpha_list,Phi,record_index
 
 
 
@@ -1350,7 +1350,7 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,
     if epoch in record_index:
       B_list.append(B),alpha_list.append(alpha)    
     epoch+=1
-  return B_list,alpha_list,Phi
+  return B_list,alpha_list,Phi,record_index
 
 def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[0,10,50,100,150,180,199],start_epoch=20,threshold=0.8):
   if len(kernel[1])==0:
@@ -1358,7 +1358,6 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
   C=kernel[1]
   Phi,eps=choose_kernel(kernel,X)
   N1,D=X.shape
-
   # initlize 
   R=np.eye(D)
   beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
@@ -1369,7 +1368,6 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
   # period to record previous model: 
   period=10
 
-  
   while epoch<n_iteration:
     if epoch%period==0:
       R_pre,beta_pre=R.copy(),beta.copy()
@@ -1378,9 +1376,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     p1_hat=np.sum(gamma,1)
     Domain=p1_hat>1e-10
     BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
-    Yhat[Domain]=BaryP
-
-    
+    Yhat[Domain]=BaryP  
    
     # find optimal R,S,beta, conditonal on alpha    
     Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
@@ -1396,7 +1392,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     epoch+=1
     if epoch in record_index:
       R_list.append(R),beta_list.append(beta),alpha_list.append(alpha)
-  return R_list,beta_list,alpha_list,Phi
+  return R_list,beta_list,alpha_list,Phi,record_index
 
     
 
@@ -1440,5 +1436,5 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[0,10,5
     if epoch in record_index:
       B_list.append(B),alpha_list.append(alpha)
     epoch+=1
-  return B_list,alpha_list,Phi
+  return B_list,alpha_list,Phi,record_index
 
