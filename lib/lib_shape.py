@@ -1461,8 +1461,10 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
             B=np.vstack((beta,R))
 
             Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+        make_plot(Yhat,Y)
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)
         epoch+=1
+        #print(epoch)
     return (B_list,alpha_list,Phi),record_index
 
