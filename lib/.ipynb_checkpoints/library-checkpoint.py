@@ -10,7 +10,7 @@ import os
 
 import numba as nb
 from typing import Tuple #,List
-from numba.typed import List
+#from numba.typed import List
 
 
 global p
@@ -57,7 +57,7 @@ def cost_matrix_d(X,Y):
 
 
 
-@nb.njit(['int64[:](int64,int64)'],fastmath=True,cache=True)
+@nb.njit(fastmath=True,cache=True)
 def arange(start,end):
     n=end-start
     L=np.zeros(n,np.int64)
@@ -67,7 +67,7 @@ def arange(start,end):
 
 
 
-@nb.njit(['Tuple((int64,int64))(int64[:])'],cache=True)
+@nb.njit(cache=True)
 def unassign_y(L1):
     '''
     Parameters
@@ -109,7 +109,7 @@ def unassign_y(L1):
 
 
 
-@nb.njit(['Tuple((int64,int64))(int64[:])'],cache=True)
+@nb.njit(cache=True)
 def unassign_y_nb(L1):
     '''
     Parameters
@@ -304,8 +304,115 @@ def Gaussian_mixture_32(mu_list, variance_list,n):
     return X
 
 
-    
-    
-    
+def opt_pr(mu, nu, M, mass, **kwargs):
+    """
+    Solves the partial optimal transport problem for the quadratic cost
+    and returns the OT plan
 
+    The function considers the following problem:
+
+    .. math::
+        \gamma = \mathop{\arg \min}_\gamma \quad \langle \gamma, \mathbf{M} \rangle_F
+
+    .. math::
+        s.t. \ \gamma \mathbf{1} &\leq \mathbf{a}
+
+             \gamma^T \mathbf{1} &\leq \mathbf{b}
+
+             \gamma &\geq 0
+
+             \mathbf{1}^T \gamma^T \mathbf{1} = m &\leq \min\{\|\mathbf{a}\|_1, \|\mathbf{b}\|_1\}
+
+
+    where :
+
+    - :math:`\mathbf{M}` is the metric cost matrix
+    - :math:`\mathbf{a}` and :math:`\mathbf{b}` are source and target unbalanced distributions
+    - `m` is the amount of mass to be transported
+
+    Parameters
+    ----------
+    a : np.ndarray (dim_a,)
+        Unnormalized histogram of dimension `dim_a`
+    b : np.ndarray (dim_b,)
+        Unnormalized histograms of dimension `dim_b`
+    M : np.ndarray (dim_a, dim_b)
+        cost matrix for the quadratic cost
+    m : float, optional
+        amount of mass to be transported
+    nb_dummies : int, optional, default:1
+        number of reservoir points to be added (to avoid numerical
+        instabilities, increase its value if an error is raised)
+    log : bool, optional
+        record log if True
+    **kwargs : dict
+        parameters can be directly passed to the emd solver
+
+
+    .. warning::
+        When dealing with a large number of points, the EMD solver may face
+        some instabilities, especially when the mass associated to the dummy
+        point is large. To avoid them, increase the number of dummy points
+        (allows a smoother repartition of the mass over the points).
+
+
+    Returns
+    -------
+    gamma : (dim_a, dim_b) ndarray
+        Optimal transportation matrix for the given parameters
+    log : dict
+        log dictionary returned only if `log` is `True`
+
+
+    Examples
+    --------
+    import ot
+    >>> a = [.1, .2]
+    >>> b = [.1, .1]
+    >>> M = [[0., 1.], [2., 3.]]
+    >>> np.round(partial_wasserstein(a,b,M), 2)
+    array([[0.1, 0. ],
+           [0. , 0.1]])
+    >>> np.round(partial_wasserstein(a,b,M,m=0.1), 2)
+    array([[0.1, 0. ],
+           [0. , 0. ]])
+
+    References
+    ----------
+    ..  [28] Caffarelli, L. A., & McCann, R. J. (2010) Free boundaries in
+        optimal transport and Monge-Ampere obstacle problems. Annals of
+        mathematics, 673-730.
+    ..  [29] Chapel, L., Alaya, M., Gasso, G. (2020). "Partial Optimal
+        Transport with Applications on Positive-Unlabeled Learning".
+        NeurIPS.
+
+    See Also
+    --------
+    ot.partial.partial_wasserstein_lagrange: Partial Wasserstein with
+    regularization on the marginals
+    ot.partial.entropic_partial_wasserstein: Partial Wasserstein with a
+    entropic regularization parameter
+    """
+    
+    Lambda,A=1.0,1.0
+    n,m=M.shape 
+    mu1,nu1=np.zeros(n+1),np.zeros(m+1)
+    mu1[0:n],nu1[0:m]=mu,nu
+    mu1[-1],nu1[-1]=np.sum(nu)-mass,np.sum(mu)-mass
+    M1=np.zeros((n+1,m+1),dtype=np.float64)
+    M1[0:n,0:m]=M
+    M1[:,m],M1[n,:]=Lambda,Lambda
+    M1[n,m]=2*Lambda+A
+
+
+
+    # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
+    # result_code_string = check_result(result_code)
+    gamma1=ot.lp.emd(mu1,nu1,M1,**kwargs)
+    gamma=gamma1[0:n,0:m]
+    cost=np.sum(M*gamma)
+
+    return cost,gamma
+
+    
     

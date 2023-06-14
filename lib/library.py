@@ -67,7 +67,7 @@ def arange(start,end):
 
 
 
-@nb.njit(['Tuple((int64,int64))(int64[:])'],cache=True)
+@nb.njit(cache=True)
 def unassign_y(L1):
     '''
     Parameters
@@ -109,7 +109,7 @@ def unassign_y(L1):
 
 
 
-@nb.njit(['Tuple((int64,int64))(int64[:])'],cache=True)
+@nb.njit(cache=True)
 def unassign_y_nb(L1):
     '''
     Parameters
@@ -416,110 +416,3 @@ def opt_pr(mu, nu, M, mass, **kwargs):
 
     
     
-
-    
-def OPT_Gaussian(X,Y,N0,sigma2=0.1,eps=2.0,n_iterations=200,record_index=[0,10,20,30,50,100,199]):
-  N1,D=X.shape
-  #C=X.copy()
-  Phi=kernel_matrix_Gaussian(X,X,sigma2)
-
-  # initlize 
-  R=np.eye(D)
-  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
-  Yhat=Phi.dot(alpha)+X.dot(R)+beta 
-  make_plot(Yhat,Y)
-  epoch=0
-  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
-  R_list,beta_list,alpha_list=list(),list(),list()
-  while epoch<n_iterations:
-    if epoch%10==0:
-      R_pre,beta_pre=R.copy(),beta.copy()
-    M=cost_matrix_d(Yhat,Y)
-    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
-    p1_hat=np.sum(gamma,1)
-    Domain=p1_hat>1e-10
-    #BaryP=np.zeros((N1,D))
-    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
-    Yhat[Domain]=BaryP
-
-    
-   
-    # find optimal R,S,beta, conditonal on alpha    
-    Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-    R,S=recover_rotation(Y_prime2,X[Domain])
-    beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
-
-
-
-    if epoch>=20 and epoch%10>3 and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<0.08:
-      Y_prime=Yhat-X.dot(R)-beta
-      alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
-
-    Yhat=Phi.dot(alpha)+X.dot(R)+beta
-    
-    # if epoch%15==0:
-    #     print('model')
-    #     make_plot(Yhat,Y)
-    #     print('linear error',np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre))
-    #     print('-----')
-    epoch+=1
-    if epoch in record_index:
-      R_list.append(R)
-      beta_list.append(beta)
-      alpha_list.append(alpha)
-  return R_list,beta_list,alpha_list
-
-    
-
-  
-
-def OPT_TPS(X,Y,N0,eps,n_iterations=200,record_index=[0,10,20,30,50,100,199]):
-  N1,D=X.shape
-  C=X.copy()
-  Phi0=kernel_matrix_TPS(C,X,D=2)
-  X_bar=np.hstack((np.ones((X.shape[0],1)),X))
-  # initlize 
-  R=np.eye(D)
-  beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
-  B=np.vstack((beta,R))
-  Yhat=Phi0.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta 
-  epoch=0
-  mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
-  alpha_list,B_list=list(),list()
-  while epoch<n_iterations:
-    if epoch%10==0:
-      R_pre,beta_pre=R.copy(),beta.copy()
-    M=cost_matrix_d(Yhat,Y)
-    cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
-    p1_hat=np.sum(gamma,1)
-    Domain=p1_hat>1e-10
-    #BaryP=np.zeros((N1,D))
-    BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
-    Yhat[Domain]=BaryP
-
-   
-    if epoch>=20 and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<0.08:
-      alpha,B=TPS_recover_parameter_cuda(Phi0,X_bar,Yhat,eps)
-    else:
-       # find optimal R,S,beta, conditonal on alpha    
-      Y_prime2=Yhat[Domain]-Phi0[Domain].dot(alpha)
-      R,S=recover_rotation(Y_prime2,X[Domain])
-      beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
-      B=np.vstack((beta,R))
-
-    Yhat=Phi0.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
-    if epoch in record_index:
-      B_list.append(B)
-      # beta_list.append(beta)
-      alpha_list.append(alpha)
-
-
-    
-    # if epoch%5==0:
-    #     print('model')
-    #     make_plot(Yhat,Y)
-    #     print('linear error',np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre))
-    #     print('-----')
-    epoch+=1
-  return alpha_list,B_list
-

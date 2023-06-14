@@ -14,7 +14,7 @@ import os
 import sys
 #import numba as nb
 from typing import Tuple #,List
-from numba.typed import List
+#from numba.typed import List
 import ot
 import numba as nb 
 

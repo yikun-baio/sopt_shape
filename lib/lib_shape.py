@@ -7,17 +7,14 @@ Created on Sun Jun 26 14:25:29 2022
 import torch 
 import os
 import sys
-import cupy as cp
 
-from .opt1d import solve 
+#from .opt1d import solve 
 from .library import *
 from .lib_ot import *   
 from .sliced_opt import *
-from scipy import linalg
 
-
-#print('hello')
 import matplotlib.pyplot as plt
+
 
 def get_swiss(N=100,a = 4,r_min = 0.1,r_max = 1): 
     """
@@ -335,8 +332,6 @@ def vec_mean(X):
 
         
 
-    
-    
 @nb.njit(['Tuple((float64[:,:],float64))(float64[:,:],float64[:,:])'])
 def recover_rotation(X,Y):
     """
@@ -367,8 +362,7 @@ def recover_rotation(X,Y):
     scaling=np.sum(np.abs(S.T))/np.trace(Y_c.T.dot(Y_c))
     return rotation,scaling
 
-
-def recover_rotation_cuda(X,Y):
+def recover_rotation_gpu(X,Y,device='mps'):
     """
     return the optimal rotation, scaling based on the correspondence (X,Y) 
     
@@ -383,22 +377,71 @@ def recover_rotation_cuda(X,Y):
     scaling: float64 
     
     """
+    X,Y=X.astype(np.float32),Y.astype(np.float32)
+    X_tc,Y_tc=torch.from_numpy(X).to(device),torch.from_numpy(Y).to(device)
+    n,d=X_tc.shape
+    X_center,Y_center=X_tc-torch.mean(X_tc,0),Y_tc-torch.mean(Y_tc,0)
+    YX=Y_center.T.mm(X_center)
+    U,S,VT=torch.linalg.svd(YX)
+    R=U.mm(VT)
+    diag=torch.eye(d,device=device)
+    diag[d-1,d-1]=torch.linalg.det(R.T)
+    rotation=U.mm(diag).mm(VT)
+    scaling=torch.sum(torch.abs(S.T))/torch.trace(Y_tc.T.mm(Y_tc))
+    return rotation.cpu().numpy().astype(np.float64),scaling.cpu().numpy().astype(np.float64)
 
-    X_c,Y_c=cp.array(X),cp.array(Y)
-    n,d=X.shape
-    X_center,Y_center=X_c-cp.mean(X_c,0),Y_c-cp.mean(Y_c,0)
+
+
+
+
+
+
+@nb.njit(fastmath=True)
+def recover_alpha(Phi,Y,epsilon=1.0):
+    n,d=Phi.shape
+    return np.linalg.inv(Phi.T.dot(Phi)+epsilon*np.eye(d)).dot(Phi.T.dot(Y))
+
     
-    YX=Y_center.T.dot(X_center)
-    U,S,VT=cp.linalg.svd(YX)
-    R=U.dot(VT)
-    diag=cp.eye(d)
-    diag[d-1,d-1]=cp.linalg.det(R.T)
-    rotation=U.dot(diag).dot(VT)
-    scaling=cp.sum(cp.abs(S.T))/cp.trace(Y_c.T.dot(Y_c))
-    return cp.asnumpy(rotation),cp.asnumpy(scaling)
+def recover_alpha_gpu(Phi,Y,epsilon=1.0,device='mps'):
+    n,d=Phi.shape
+    Phi,Y=Phi.astype(np.float32),Y.astype(np.float32)
+    
+    Phic,Y_tc=torch.from_numpy(Phi).to(device),torch.from_numpy(Y).to(device)
+    re=torch.linalg.inv(Phic.T.mm(Phic)+epsilon*torch.eye(d,device=device)).mm(Phic.T.mm(Y_tc))
+    return re.cpu().numpy().astype(np.float64)
 
 
 
+
+
+#@nb.njit()
+def TPS_recover_parameter(Phi,X_bar,Y,epsilon=1.0):
+    n,d=X_bar.shape
+    n,K=Phi.shape
+    diag_M=np.zeros((n,K))
+    np.fill_diagonal(diag_M, epsilon)
+    M=Phi+diag_M
+    Q, R0 = np.linalg.qr(X_bar,'complete')
+    Q1,Q2=Q[:,0:d],Q[:,d:n]
+    R=R0[0:d,:]
+    alpha=Q2.dot(np.linalg.inv(Q2.T.dot(M).dot(Q2))).dot(Q2.T).dot(Y)
+    B=np.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
+    return alpha,B
+
+def TPS_recover_parameter_gpu(Phi,X_bar,Y,epsilon=1.0,device='mps'):
+    Phi,X_bar,Y=torch.from_numpy(Phi.astype(np.float32)).to(device),torch.from_numpy(X_bar.astype(np.float32)).to(device),torch.from_numpy(Y.astype(np.float32)).to(device)
+    n,d=X_bar.shape
+    n,K=Phi.shape
+    diag_M=torch.zeros((n,K),device=device)
+    diag_M.fill_diagonal_(epsilon)
+    M=Phi+diag_M
+    Q, R0 = torch.linalg.qr(X_bar,'complete')
+    Q1,Q2=Q[:,0:d].clone(),Q[:,d:n].clone()
+    R=R0[0:d,:].clone()
+    Re1=torch.linalg.inv(Q2.T.mm(M).mm(Q2))
+    alpha=Q2.mm(Re1).mm(Q2.T).mm(Y)
+    B=torch.linalg.inv(R).mm(Q1.T).mm(Y-M.mm(alpha))
+    return alpha.cpu().numpy().astype(np.float64),B.cpu().numpy().astype(np.float64)
 
 
 @nb.njit(['Tuple((float64[:,:],float64[:]))(float64[:,:],float64[:,:])'],fastmath=True)
@@ -438,9 +481,6 @@ def recover_rotation_du(X,Y):
             denum+=Y_c[j].T.dot(Ei).dot(Y_c[j])
         scaling[i]=num/denum
     return rotation,scaling
-
-
-
 
 
 
@@ -819,9 +859,6 @@ def normal_image(X_data,X_noise,Y_data,Y_noise,image_path,name):
 def Gaussian_kernel(r2,sigma2):
     return np.exp(-r2/sigma2)
 
-# def Gaussian_kernel(r2,sigma2):
-#     return np.exp(-r2/sigma2)
-
 
 @nb.njit()
 def TPS_kernel_2D(r2):
@@ -830,31 +867,6 @@ def TPS_kernel_2D(r2):
 @nb.njit()
 def TPS_kernel_3D(r2):
     return np.sqrt(r2)
-
-
-
-@nb.njit(fastmath=True)
-def kernel_matrix_Gaussian(c,x,sigma2): #,Type='Gaussian'):
-    '''
-    x: (n,d) numpy array
-    c: (n,d) numpy array
-    type: 0 Gaussian kernel 
-    type: 1 SPF kernel 
-    '''
-    #c1,x1=np.meshgrid(c,x)
-    K,d=c.shape
-    n=x.shape[0]
-    r2=np.zeros((n,K))
-    #Phi=np.zeros((n,d))
-    for i in range(d):
-        r2+=np.square(x[:,i:i+1]-c[:,i])
-    if Type=='Gaussian': # Gaussian Kernel 
-        Phi=Gaussian_kernel(r2,sigma2)
-    if Type=='TPS': # TPS Kernel
-        Phi=TPS_kernel_2D(r2)
-        #ID=np.isnan(Phi)
-        #Phi[ID]=0.0
-    return Phi
 
 
 
@@ -889,56 +901,13 @@ def kernel_matrix_TPS(c,x,D):
     diff_matrix=np.expand_dims(x,1)-np.expand_dims(c,0)
     r2=np.sum(np.square(diff_matrix),axis=2)
     Phi=np.zeros((n,d))
-    if D==2: 
-        Phi=TPS_kernel_2D(r2)
-    elif D==3:
+    if D==3:
         Phi=TPS_kernel_3D(r2)
+    else:
+        Phi=TPS_kernel_2D(r2)
     return Phi
 
 
-@nb.njit(fastmath=True)
-def recover_alpha(Phi,y_prime,epsilon=1):
-    n,d=Phi.shape
-    return np.linalg.inv(Phi.T.dot(Phi)+epsilon*np.eye(d)).dot(Phi.T.dot(y_prime))
-
-    
-def recover_alpha_cuda(Phi,y_prime,epsilon=1e-2):
-    n,d=Phi.shape
-    Phi_c,y_prime_c=cp.array(Phi),cp.array(y_prime)
-    re=cp.linalg.inv(Phi_c.T.dot(Phi_c)+epsilon*cp.eye(d)).dot(Phi_c.T.dot(y_prime_c))
-    return cp.asnumpy(re)
-
-
-#@nb.njit()
-def TPS_recover_parameter(Phi_T,X_bar,Y,epsilon):
-    n,d=X_bar.shape
-    n,K=Phi_T.shape
-    diag_M=np.zeros((n,K))
-    np.fill_diagonal(diag_M, epsilon)
-    M=Phi_T+diag_M
-    Q, R0 = np.linalg.qr(X_bar,'complete')
-    Q1,Q2=Q[:,0:d],Q[:,d:n]
-    R=R0[0:d,:]
-    alpha=Q2.dot(np.linalg.inv(Q2.T.dot(M).dot(Q2))).dot(Q2.T).dot(Y)
-    B=np.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
-    return alpha,B
-
-def TPS_recover_parameter_cuda(Phi_T,X_bar,Y,epsilon):
-    Phi_T,X_bar,Y=cp.array(Phi_T),cp.array(X_bar),cp.array(Y)
-    n,d=X_bar.shape
-    n,K=Phi_T.shape
-    diag_M=cp.zeros((n,K))
-    cp.fill_diagonal(diag_M,epsilon)
-    M=Phi_T+diag_M
-    Q, R0 = cp.linalg.qr(X_bar,'complete')
-    Q1,Q2=Q[:,0:d],Q[:,d:n]
-    R=R0[0:d,:]
-    # print(Q2.get().shape)
-    # print(M.get().shape)
-    Re1=cp.linalg.inv(Q2.T.dot(M).dot(Q2))
-    alpha=Q2.dot(Re1).dot(Q2.T).dot(Y)
-    B=cp.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
-    return alpha.get(),B.get()
 
 
 @nb.njit(fastmath=True)
@@ -1174,30 +1143,33 @@ def opt_plans(X_projections,Y_projections,Lambda_list):
 
 def choose_kernel(kernel,X):
     if kernel[0]=='Gaussian':
-      C,sigma2,eps=kernel[1],kernel[2],kernel[3]
-      Phi=kernel_matrix_Gaussian(C,X,sigma2) 
+        C,sigma2,eps=kernel[1],kernel[2],kernel[3]
+        if len(C)==0:
+            C=X.copy()
+        Phi=kernel_matrix_Gaussian(C,X,sigma2) 
     elif kernel[0]=='TPS': 
-      kernel[1]=='TPS'
-      C,_,eps=kernel[1],kernel[2],kernel[3]
-      Phi=kernel_matrix_TPS(C,X)
+        kernel[1]=='TPS'
+        C,_,eps=kernel[1],kernel[2],kernel[3]
+        if len(C)==0:
+            C=X.copy()
+        Phi=kernel_matrix_TPS(C,X)
     return Phi,eps
 
 
-def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2000,record_index=[],start_epoch=None,threshold=0.8):
+def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2000,record_index=[],start_epoch=None,threshold=0.8,**kwargs):
     # input kernel: method name, control point, sigma2, epsilon
     if len(kernel[1])==0:
-       kernel[1]=X.copy()
+        kernel[1]=X.copy()
     C=kernel[1]
     Phi,eps=choose_kernel(kernel,X)
-
-    Phi_torch,X_torch,Y_torch=torch.from_numpy(Phi),torch.from_numpy(X),torch.from_numpy(Y) 
+    Phi_tc,X_tc,Y_tc=torch.from_numpy(Phi),torch.from_numpy(X),torch.from_numpy(Y) 
     N1,D=X.shape
     # initlize 
-    theta_torch=torch.zeros(D,requires_grad=True)
-    R_torch=rotation_re_T(theta_torch)
-    beta_torch,alpha_torch=torch.mean(Y_torch,0)-torch.mean(X_torch.mm(R_torch),0),torch.zeros((C.shape[0],D),requires_grad=True,dtype=torch.float64)
-    beta_torch=beta_torch.clone().detach().requires_grad_(True)
-    Yhat_torch=Phi_torch.mm(alpha_torch)+X_torch.mm(R_torch)+beta_torch #Phi.dot(alpha)+X.dot(R)+beta 
+    theta_tc=torch.zeros(D,requires_grad=True)
+    R_tc=rotation_re_T(theta_tc)
+    beta_tc,alpha_tc=torch.mean(Y_tc,0)-torch.mean(X_tc.mm(R_tc),0),torch.zeros((C.shape[0],D),requires_grad=True,dtype=torch.float64)
+    beta_tc=beta_tc.clone().detach().requires_grad_(True)
+    Yhat_tc=Phi_tc.mm(alpha_tc)+X_tc.mm(R_tc)+beta_tc #Phi.dot(alpha)+X.dot(R)+beta 
 
     # mass and Lambda setting 
     mass_diff=0
@@ -1213,37 +1185,37 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     if start_epoch==None:
         start_epoch=int(n_iteration/10)
 
-    optimizer_rigid,optimizer_nonrigid = torch.optim.Adam([theta_torch,beta_torch], lr=0.1),torch.optim.Adam([alpha_torch], lr=0.1/N1) 
+    optimizer_rigid,optimizer_nonrigid = torch.optim.Adam([theta_tc,beta_tc], lr=0.1),torch.optim.Adam([alpha_tc], lr=0.1/N1) 
     epoch=0
     while epoch<n_iteration:
-        R_pre,beta_pre=R_torch.detach().numpy().copy(),beta_torch.detach().numpy().copy(),
-        projections_torch=torch.from_numpy(random_projections(D,n_projection,1))
-        Yhat_projections_torch,Y_projections_torch=projections_torch.mm(Yhat_torch.T),projections_torch.mm(Y_torch.T)
-        (Yhat_projections_s,_),(Y_projections_s,_)=Yhat_projections_torch.sort(),Y_projections_torch.sort()  
+        R_pre,beta_pre=R_tc.detach().numpy().copy(),beta_tc.detach().numpy().copy(),
+        projections_tc=torch.from_numpy(random_projections(D,n_projection,1))
+        Yhat_projections_tc,Y_projections_tc=projections_tc.mm(Yhat_tc.T),projections_tc.mm(Y_tc.T)
+        (Yhat_projections_s,_),(Y_projections_s,_)=Yhat_projections_tc.sort(),Y_projections_tc.sort()  
         Lambda_list=np.full(n_projection,Lambda)
         _,opt_plan_list=opt_plans(Yhat_projections_s.detach().numpy(),Y_projections_s.numpy(),Lambda_list)
-        opt_plan_list_torch=torch.from_numpy(opt_plan_list)
-        obj_cost_list=[torch.sum((Yhat_theta[L>=0]-Y_theta[L[L>=0]])**2) for (L,Yhat_theta,Y_theta) in zip(opt_plan_list_torch,Yhat_projections_s,Y_projections_s)]
+        opt_plan_list_tc=torch.from_numpy(opt_plan_list)
+        obj_cost_list=[torch.sum((Yhat_theta[L>=0]-Y_theta[L[L>=0]])**2) for (L,Yhat_theta,Y_theta) in zip(opt_plan_list_tc,Yhat_projections_s,Y_projections_s)]
         obj_cost=sum(obj_cost_list)/n_projection
         mass=np.sum(opt_plan_list>=0)/n_projection
         mass_diff=mass-N0
         Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
         optimizer_rigid.zero_grad(),optimizer_nonrigid.zero_grad()
         obj_cost.backward()
-        if epoch>=start_epoch and np.linalg.norm(R_torch.detach().numpy()-R_pre)+np.linalg.norm(beta_torch.detach().numpy()-beta_pre)<thresh_hold:
+        if epoch>=start_epoch and np.linalg.norm(R_tc.detach().numpy()-R_pre)+np.linalg.norm(beta_tc.detach().numpy()-beta_pre)<thresh_hold:
             #print('non rigid')
             optimizer_rigid.step(),optimizer_nonrigid.step()
         else:
             optimizer_rigid.step()
         # update Yhat 
-        R_torch=rotation_re_T(theta_torch)
-        Yhat_torch=Phi_torch.mm(alpha_torch)+X_torch.mm(R_torch)+beta_torch
+        R_tc=rotation_re_T(theta_tc)
+        Yhat_tc=Phi_tc.mm(alpha_tc)+X_tc.mm(R_tc)+beta_tc
         if epoch in record_index:
-            R_list.append(R_torch.detach().numpy()),beta_list.append(beta_torch.detach().numpy()),alpha_list.append(alpha_torch.detach().numpy())
+            R_list.append(R_tc.detach().numpy()),beta_list.append(beta_tc.detach().numpy()),alpha_list.append(alpha_tc.detach().numpy())
         epoch+=1
     return (R_list,beta_list,alpha_list,Phi),record_index
 
-def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[],start_epoch=None,threshold=0.8):
+def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[],start_epoch=None,threshold=0.8,**kwargs):
     # input kernel: method name, control point, sigma2, epsilon
     if len(kernel[1])==0:
         kernel[1]=X.copy()
@@ -1293,15 +1265,14 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
         # update Yhat by R,beta
 
         if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
-            R,S=recover_rotation(Y_prime2,X[domain_sum])
+            R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
             Y_prime=Yhat[domain_sum]-X[domain_sum].dot(R)-beta
-            alpha=recover_alpha_cuda(Phi[domain_sum],Y_prime,eps)
+            alpha=recover_alpha_gpu(Phi[domain_sum],Y_prime,eps,**kwargs)
             Yhat=Phi.dot(alpha)+X.dot(R)+beta
         else:
-            R,S=recover_rotation_cuda(Y_prime2,X[domain_sum])
+            R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
-
             
         Yhat=Phi.dot(alpha)+X.dot(R)+beta    
         if epoch in record_index:
@@ -1311,7 +1282,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
 
 
 
-def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],start_epoch=20,threshold=0.8):
+def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],start_epoch=20,threshold=0.8,**kwargs):
     X_bar,C=np.hstack((np.ones((X.shape[0],1)),X)),X.copy()
     Phi=kernel_matrix_TPS(C,X,D=2) 
     N1,D=X.shape
@@ -1355,21 +1326,20 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],sta
             mass_diff=mass-N0
             Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
         if epoch>=start_epoch and np.linalg.norm(B-B_pre)<thresh_hold:
-            alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
+            alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
         else:
             # find optimal R,S,beta, conditonal on alpha    
             Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
-            R,S=recover_rotation_cuda(Y_prime2,X[domain_sum])
+            R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R))
             B=np.vstack((beta,R))
-
             Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)    
         epoch+=1
     return (B_list,alpha_list,Phi),record_index
 
-def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[],start_epoch=None,threshold=0.8):
+def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[],start_epoch=None,threshold=0.8,**kwargs):
     if len(kernel[1])==0:
         kernel[1]=X.copy()
     C=kernel[1]
@@ -1404,13 +1374,13 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
         # find optimal R,S,beta, conditonal on alpha    
         if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            R,S=recover_rotation_cuda(Y_prime2,X[Domain])
+            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
             Y_prime=Yhat-X.dot(R)-beta
-            alpha=recover_alpha_cuda(Phi[Domain],Y_prime,eps)
+            alpha=recover_alpha_gpu(Phi[Domain],Y_prime,eps)
         else:
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            R,S=recover_rotation(Y_prime2,X[Domain])
+            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
 
         Yhat=Phi.dot(alpha)+X.dot(R)+beta
@@ -1424,7 +1394,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
 
   
 
-def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,threshold=0.8):
+def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,threshold=0.8,**kwargs):
     N1,D=X.shape
     C=X.copy()
     Phi=kernel_matrix_TPS(C,X,D=2)
@@ -1444,6 +1414,7 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         start_epoch=int(n_iteration/10)
 
     while epoch<n_iteration:
+        print(epoch)
         B_pre=B.copy()
         M=cost_matrix_d(Yhat,Y)
         cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
@@ -1452,11 +1423,14 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
         Yhat[Domain]=BaryP
         if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
-            alpha,B=TPS_recover_parameter_cuda(Phi,X_bar,Yhat,eps)
+            print('here3')
+            alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
         else:
             # find optimal R,S,beta, conditonal on alpha    
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            R,S=recover_rotation_cuda(Y_prime2,X[Domain])
+            print('here')
+            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
+            print('here2')
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
             B=np.vstack((beta,R))
 
