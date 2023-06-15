@@ -59,3 +59,5 @@ lib/__pycache__/lib_shape.cpython-310.pyc
 lib/__pycache__/library.cpython-310.pyc
 lib/__pycache__/sliced_opt.cpython-310.pyc
 .DS_Store
+result/3D_female/OPT_RBF.pt
+result/3D_female/OPT_TPS
