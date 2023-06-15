@@ -835,6 +835,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     optimizer_rigid,optimizer_nonrigid = torch.optim.Adam([theta_tc,beta_tc], lr=0.1),torch.optim.Adam([alpha_tc], lr=0.1/N1) 
     epoch=0
     while epoch<n_iteration:
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
         R_pre,beta_pre=R_tc.detach().numpy().copy(),beta_tc.detach().numpy().copy(),
         projections_tc=torch.from_numpy(random_projections(D,n_projection,1))
         Yhat_projections_tc,Y_projections_tc=projections_tc.mm(Yhat_tc.T),projections_tc.mm(Y_tc.T)
@@ -849,7 +850,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
         Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
         optimizer_rigid.zero_grad(),optimizer_nonrigid.zero_grad()
         obj_cost.backward()
-        if epoch>=start_epoch and np.linalg.norm(R_tc.detach().numpy()-R_pre)+np.linalg.norm(beta_tc.detach().numpy()-beta_pre)<thresh_hold:
+        if epoch>=start_epoch and np.linalg.norm(R_tc.detach().numpy()-R_pre)+np.linalg.norm(beta_tc.detach().numpy()-beta_pre)<threshold:
             #print('non rigid')
             optimizer_rigid.step(),optimizer_nonrigid.step()
         else:
@@ -889,6 +890,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
     epoch=0
 
     while epoch<n_iteration:
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
         projections=random_projections(D,n_projection,1)
         #Yhat_pre=Yhat.copy()
         R_pre,beta_pre=R.copy(),beta.copy()
@@ -911,7 +913,7 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
 
         # update Yhat by R,beta
 
-        if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
+        if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<threshold:
             R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
             Y_prime=Yhat[domain_sum]-X[domain_sum].dot(R)-beta
@@ -955,11 +957,13 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],sta
 
     epoch=0
     while epoch<n_iteration:
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
         B_pre=B.copy()
         projections=random_projections(D,n_projection,1)
         #Yhat_pre=Yhat.copy()
         R_pre,beta_pre,Yhat_pre=R.copy(),beta.copy(),Yhat.copy()
         domain_sum=np.full(N1,False)
+
         for (epoch2,theta) in enumerate(projections):
             Yhat_theta,Y_theta=np.dot(theta,Yhat.T),np.dot(theta,Y.T)
             Yhat_indice,Y_indice=Yhat_theta.argsort(),Y_theta.argsort()
@@ -972,7 +976,7 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],sta
             mass=np.sum(Domain)
             mass_diff=mass-N0
             Lambda,Delta=update_lambda(Lambda,Delta,mass_diff,N0,lower_bound)
-        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<thresh_hold:
+        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
             alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
         else:
             # find optimal R,S,beta, conditonal on alpha    
@@ -1010,6 +1014,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
         start_epoch=int(n_iteration/10)
 
     while epoch<n_iteration:
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
         R_pre,beta_pre=R.copy(),beta.copy()
         M=cost_matrix_d(Yhat,Y)
         cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
@@ -1019,7 +1024,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
         Yhat[Domain]=BaryP  
 
         # find optimal R,S,beta, conditonal on alpha    
-        if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<thresh_hold:
+        if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<threshold:
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
             R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
@@ -1061,7 +1066,7 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         start_epoch=int(n_iteration/10)
 
     while epoch<n_iteration:
-        print(epoch)
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
         B_pre=B.copy()
         M=cost_matrix_d(Yhat,Y)
         cost,gamma=opt_pr(mu, nu, M, N0, numItermax=1e7,numThreads=10)
@@ -1083,6 +1088,6 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)
         epoch+=1
-        print('%i/%i'%(epoch,n_iteration),end='\r')
+        
     return (B_list,alpha_list,Phi),record_index
 
