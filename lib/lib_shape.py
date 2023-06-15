@@ -839,7 +839,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
     # record parameters 
     R_list,beta_list,alpha_list=list(),list(),list()
     if len(record_index)==0:
-        record_index=np.unique(np.linspace(0,n_iteration-1,num=int(n_iteration/10)).astype(np.int64))
+        record_index=np.unique(np.linspace(0,n_iteration-1,num=int(20)).astype(np.int64))
         record_index.sort()
     
     if start_epoch==None:
