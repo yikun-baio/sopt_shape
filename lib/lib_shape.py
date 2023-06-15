@@ -1377,7 +1377,7 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
             R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
             Y_prime=Yhat-X.dot(R)-beta
-            alpha=recover_alpha_gpu(Phi[Domain],Y_prime,eps)
+            alpha=recover_alpha_gpu(Phi[Domain],Y_prime,eps,**kwargs)
         else:
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
             R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
