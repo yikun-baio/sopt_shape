@@ -678,6 +678,19 @@ def kernel_matrix_TPS(c,x,D):
         Phi=TPS_kernel_2D(r2)
     return Phi
 
+def update_lambda(Lambda,Delta,mass_diff,N0,lower_bound):
+  if mass_diff>N0*0.003:
+    Lambda-=Delta 
+  if mass_diff<-N0*0.003:
+    Lambda+=Delta
+    Delta=Lambda*1/8
+  if Lambda<Delta:
+    Lambda=Delta
+    Delta=Delta*1/2
+  if Delta<lower_bound:
+    Delta=lower_bound
+  return Lambda,Delta
+
 
 
 
