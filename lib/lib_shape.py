@@ -740,130 +740,6 @@ def make_plot(X,Y,path=None):
        plt.savefig(path)
     plt.show()
 
-
-def opt_pr(mu, nu, M, mass, **kwargs):
-    """
-    Solves the partial optimal transport problem for the quadratic cost
-    and returns the OT plan
-
-    The function considers the following problem:
-
-    .. math::
-        \gamma = \mathop{\arg \min}_\gamma \quad \langle \gamma, \mathbf{M} \rangle_F
-
-    .. math::
-        s.t. \ \gamma \mathbf{1} &\leq \mathbf{a}
-
-             \gamma^T \mathbf{1} &\leq \mathbf{b}
-
-             \gamma &\geq 0
-
-             \mathbf{1}^T \gamma^T \mathbf{1} = m &\leq \min\{\|\mathbf{a}\|_1, \|\mathbf{b}\|_1\}
-
-
-    where :
-
-    - :math:`\mathbf{M}` is the metric cost matrix
-    - :math:`\mathbf{a}` and :math:`\mathbf{b}` are source and target unbalanced distributions
-    - `m` is the amount of mass to be transported
-
-    Parameters
-    ----------
-    a : np.ndarray (dim_a,)
-        Unnormalized histogram of dimension `dim_a`
-    b : np.ndarray (dim_b,)
-        Unnormalized histograms of dimension `dim_b`
-    M : np.ndarray (dim_a, dim_b)
-        cost matrix for the quadratic cost
-    m : float, optional
-        amount of mass to be transported
-    nb_dummies : int, optional, default:1
-        number of reservoir points to be added (to avoid numerical
-        instabilities, increase its value if an error is raised)
-    log : bool, optional
-        record log if True
-    **kwargs : dict
-        parameters can be directly passed to the emd solver
-
-
-    .. warning::
-        When dealing with a large number of points, the EMD solver may face
-        some instabilities, especially when the mass associated to the dummy
-        point is large. To avoid them, increase the number of dummy points
-        (allows a smoother repartition of the mass over the points).
-
-
-    Returns
-    -------
-    gamma : (dim_a, dim_b) ndarray
-        Optimal transportation matrix for the given parameters
-    log : dict
-        log dictionary returned only if `log` is `True`
-
-
-    Examples
-    --------
-
-    >>> import ot
-    >>> a = [.1, .2]
-    >>> b = [.1, .1]
-    >>> M = [[0., 1.], [2., 3.]]
-    >>> np.round(partial_wasserstein(a,b,M), 2)
-    array([[0.1, 0. ],
-           [0. , 0.1]])
-    >>> np.round(partial_wasserstein(a,b,M,m=0.1), 2)
-    array([[0.1, 0. ],
-           [0. , 0. ]])
-
-    References
-    ----------
-    ..  [28] Caffarelli, L. A., & McCann, R. J. (2010) Free boundaries in
-        optimal transport and Monge-Ampere obstacle problems. Annals of
-        mathematics, 673-730.
-    ..  [29] Chapel, L., Alaya, M., Gasso, G. (2020). "Partial Optimal
-        Transport with Applications on Positive-Unlabeled Learning".
-        NeurIPS.
-
-    See Also
-    --------
-    ot.partial.partial_wasserstein_lagrange: Partial Wasserstein with
-    regularization on the marginals
-    ot.partial.entropic_partial_wasserstein: Partial Wasserstein with a
-    entropic regularization parameter
-    """
-    
-    Lambda,A=1.0,1.0
-    n,m=M.shape 
-    mu1,nu1=np.zeros(n+1),np.zeros(m+1)
-    mu1[0:n],nu1[0:m]=mu,nu
-    mu1[-1],nu1[-1]=np.sum(nu)-mass,np.sum(mu)-mass
-    M1=np.zeros((n+1,m+1),dtype=np.float64)
-    M1[0:n,0:m]=M
-    M1[:,m],M1[n,:]=Lambda,Lambda
-    M1[n,m]=2*Lambda+A
-
-
-
-    # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
-    # result_code_string = check_result(result_code)
-    gamma1=ot.lp.emd(mu1,nu1,M1,**kwargs)
-    gamma=gamma1[0:n,0:m]
-    cost=np.sum(M*gamma)
-
-    return cost,gamma
-def update_lambda(Lambda,Delta,mass_diff,N0,lower_bound):
-  if mass_diff>N0*0.003:
-    Lambda-=Delta 
-  if mass_diff<-N0*0.003:
-    Lambda+=Delta
-    Delta=Lambda*1/8
-  if Lambda<Delta:
-    Lambda=Delta
-    Delta=Delta*1/2
-  if Delta<lower_bound:
-    Delta=lower_bound
-  return Lambda,Delta
-
 def rotation_re_T(theta):
     """
     generate (3,3) rotation matrix along  
@@ -984,6 +860,7 @@ def SOPT_GD(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=2
         if epoch in record_index:
             R_list.append(R_tc.detach().numpy()),beta_list.append(beta_tc.detach().numpy()),alpha_list.append(alpha_tc.detach().numpy())
         epoch+=1
+
     return (R_list,beta_list,alpha_list,Phi),record_index
 
 def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=200,record_index=[],start_epoch=None,threshold=0.8,**kwargs):
@@ -1031,7 +908,6 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
 
         # find optimal R,S,beta, conditonal on alpha
         Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
-
 
         # update Yhat by R,beta
 
