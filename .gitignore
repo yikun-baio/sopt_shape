@@ -59,26 +59,5 @@ lib/__pycache__/lib_shape.cpython-310.pyc
 lib/__pycache__/library.cpython-310.pyc
 lib/__pycache__/sliced_opt.cpython-310.pyc
 .DS_Store
-<<<<<<< HEAD
 result/3D_female/OPT_RBF.pt
 result/3D_female/OPT_TPS
-=======
-.ipynb_checkpoints/3D_Gaussian_female-checkpoint.ipynb
-lib/.ipynb_checkpoints/lib_ot-checkpoint.py
-lib/.ipynb_checkpoints/library-checkpoint.py
-result/3D_female/OPT_RBF.pt
-result/3D_female/OPT_TPS
-result/3D_female/sopt_Gaussian_0.00.pt
-result/3D_female/sopt_Gaussian_0.05.pt
-result/3D_female/sopt_Gaussian_0.10.pt
-result/3D_female/sopt_TPS_0.00.pt
-result/3D_female/sopt_TPS_0.05.pt
-.gitignore
-lib/.ipynb_checkpoints/lib_ot-checkpoint.py
-lib/.ipynb_checkpoints/library-checkpoint.py
-result/3D_female/sopt_Gaussian_0.00.pt
-result/3D_female/sopt_Gaussian_0.05.pt
-result/3D_female/sopt_Gaussian_0.10.pt
-result/3D_female/sopt_TPS_0.00.pt
-result/3D_female/sopt_TPS_0.05.pt
->>>>>>> 1e2cd88 (	modified:   .gitignore)

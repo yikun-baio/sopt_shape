@@ -1194,7 +1194,6 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
         Yhat[Domain]=BaryP
         if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
-            print('here3')
             alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
         else:
             # find optimal R,S,beta, conditonal on alpha    
@@ -1208,6 +1207,6 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)
         epoch+=1
-        print('%i/%i'%(epoch,n_iteration), end='\r')
+        #print(epoch)
     return (B_list,alpha_list,Phi),record_index
 
