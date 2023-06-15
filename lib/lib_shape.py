@@ -1333,7 +1333,7 @@ def SOPT_TPS(X,Y,N0,eps=3.0,n_projection=100,n_iteration=200,record_index=[],sta
             R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
             beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R))
             B=np.vstack((beta,R))
-            Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+        Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)    
         epoch+=1
@@ -1434,8 +1434,8 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
             B=np.vstack((beta,R))
 
-            Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
-        make_plot(Yhat,Y)
+        Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)
         epoch+=1
