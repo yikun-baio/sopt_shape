@@ -362,7 +362,7 @@ def recover_rotation(X,Y):
     scaling=np.sum(np.abs(S.T))/np.trace(Y_c.T.dot(Y_c))
     return rotation,scaling
 
-def recover_rotation_gpu(X,Y,device='mps'):
+def recover_rotation_gpu(X,Y,device='mps',**kwargs):
     """
     return the optimal rotation, scaling based on the correspondence (X,Y) 
     
@@ -396,13 +396,13 @@ def recover_rotation_gpu(X,Y,device='mps'):
 
 
 
-@nb.njit(fastmath=True)
-def recover_alpha(Phi,Y,epsilon=1.0):
+# @nb.njit(fastmath=True)
+def recover_alpha(Phi,Y,epsilon=1.0,**kwargs):
     n,d=Phi.shape
     return np.linalg.inv(Phi.T.dot(Phi)+epsilon*np.eye(d)).dot(Phi.T.dot(Y))
 
     
-def recover_alpha_gpu(Phi,Y,epsilon=1.0,device='mps'):
+def recover_alpha_gpu(Phi,Y,epsilon=1.0,device='mps',**kwargs):
     n,d=Phi.shape
     Phi,Y=Phi.astype(np.float32),Y.astype(np.float32)
     
@@ -415,7 +415,7 @@ def recover_alpha_gpu(Phi,Y,epsilon=1.0,device='mps'):
 
 
 #@nb.njit()
-def TPS_recover_parameter(Phi,X_bar,Y,epsilon=1.0):
+def TPS_recover_parameter(Phi,X_bar,Y,epsilon=1.0,**kwargs):
     n,d=X_bar.shape
     n,K=Phi.shape
     diag_M=np.zeros((n,K))
@@ -428,7 +428,7 @@ def TPS_recover_parameter(Phi,X_bar,Y,epsilon=1.0):
     B=np.linalg.inv(R).dot(Q1.T).dot(Y-M.dot(alpha))
     return alpha,B
 
-def TPS_recover_parameter_gpu(Phi,X_bar,Y,epsilon=1.0,device='mps'):
+def TPS_recover_parameter_gpu(Phi,X_bar,Y,epsilon=1.0,device='mps',**kwargs):
     Phi,X_bar,Y=torch.from_numpy(Phi.astype(np.float32)).to(device),torch.from_numpy(X_bar.astype(np.float32)).to(device),torch.from_numpy(Y.astype(np.float32)).to(device)
     n,d=X_bar.shape
     n,K=Phi.shape
@@ -444,235 +444,6 @@ def TPS_recover_parameter_gpu(Phi,X_bar,Y,epsilon=1.0,device='mps'):
     return alpha.cpu().numpy().astype(np.float64),B.cpu().numpy().astype(np.float64)
 
 
-@nb.njit(['Tuple((float64[:,:],float64[:]))(float64[:,:],float64[:,:])'],fastmath=True)
-def recover_rotation_du(X,Y):
-    """
-    return the optimal rotation, scaling based on the correspondence (X,Y) 
-    
-    Parameters:
-    ----------
-    X: numpy array, shape (n,d), flaot64, target
-    Y: numpy array, shape (n,d), flaot64, source
-    
-    Return:
-    --------
-    rotation: numpy array, shape (d,d), float64 
-    scaling: numpy array, shape (d,) float64 
-    
-    """
-    
-    n,d=X.shape
-    X_c=X-vec_mean(X)
-    Y_c=Y-vec_mean(Y)
-    YX=Y_c.T.dot(X_c)
-    U,S,VT=np.linalg.svd(YX)
-    R=U.dot(VT)
-    diag=np.eye(d,dtype=np.float64)
-    diag[d-1,d-1]=np.linalg.det(R)
-    rotation=U.dot(diag).dot(VT)
-    E_list=np.eye(d,dtype=np.float64)
-    scaling=np.zeros(d,dtype=np.float64)
-    for i in range(d):
-        Ei=np.diag(E_list[i])
-        num=0
-        denum=0
-        for j in range(d):
-            num+=X_c[j].T.dot(rotation.T).dot(Ei).dot(Y_c[j])
-            denum+=Y_c[j].T.dot(Ei).dot(Y_c[j])
-        scaling[i]=num/denum
-    return rotation,scaling
-
-
-
-
-
-
-
-# method of spot_boneel 
-@nb.njit(['Tuple((float64[:,:,:],float64[:],float64[:,:]))(float64[:,:],float64[:,:],int64,int64)'])
-def spot_bonneel(S,T,n_projection=20,n_iterations=200):
-    
-    '''
-    Parameters: 
-    ------
-    S: (n,d) numpy array, float64
-        source data 
-    T: (n,d) numpy array, float64
-        target data
-    n_projection: int64
-        number of projections in each iteration 
-    n_iterations: int64
-        total number of iterations
-
-    
-    Returns: 
-    -----
-    rotation_list: (n_iterations,d,d) numpy array, float64
-                  list of rotation matrices in all iterations
-    scalar_list: (n_iterations,) numpy array, float64
-                  list of scaling parameters in all interations
-    beta_list: (n_iterations,d) numpy arrayy, float64 
-                  list of translation parameters in all interations 
-                      
-    '''
-        
-    
-    n,d=T.shape
-    N1=S.shape[0]
-    # initlize 
-    rotation=np.eye(d) #,dtype=np.float64)
-    scalar=nb.float64(1.0) #
-    beta=vec_mean(T)-vec_mean(scalar*S.dot(rotation))
-    #paramlist=[]
-    
-    rotation_list=np.zeros((n_iterations,d,d)) #.astype(np.float64)
-    scalar_list=np.zeros((n_iterations)) #.astype(np.float64)
-    beta_list=np.zeros((n_iterations,d)) #.astype(np.float64)
-    T_hat=S.dot(rotation)*scalar+beta
-    
-    #Lx_hat_org=arange(0,n)
-    
-    for i in range(n_iterations):
-#        print('i',i)
-
-        projections=random_projections(d,n_projection,1)
-        
-# #        print('start1')
-        T_hat=X_correspondence_pot(T_hat,T,projections)
-        rotation,scalar=recover_rotation(T_hat,S)
-        beta=vec_mean(T_hat)-vec_mean(scalar*S.dot(rotation))
-        T_hat=S.dot(rotation)*scalar+beta
-
-#         #move That         
-        rotation_list[i]=rotation         
-        scalar_list[i]=scalar
-        beta_list[i]=beta
-
-    return rotation_list,scalar_list,beta_list    
-
-
-
-
-@nb.njit(['Tuple((float64[:,:,:],float64[:],float64[:,:]))(float64[:,:],float64[:,:],int64)'])
-def icp_du(S,T,n_iterations):
-    '''
-    Parameters: 
-    ------
-    S: (n,d) numpy array, float64
-        source data 
-    T: (n,d) numpy array, float64
-        target data
-        
-    
-    n_iterations: int64
-        total number of iterations
-
-    
-    Returns: 
-    -----
-    rotation_list: (n_iterations,d,d) numpy array, float64
-                  list of rotation matrices in all iterations
-    scalar_list: (n_iterations,) numpy array, float64
-                  list of scaling parameters in all interations
-    beta_list: (n_iterations,d) numpy arrayy, float64 
-                  list of translation parameters in all interations 
-                      
-    '''
-        
-    n,d=T.shape
-
-    # initlize 
-    rotation=np.eye(d) #,dtype=np.float64)
-    scalar=1.0  #nb.float64(1) #
-    beta=vec_mean(T)-vec_mean(scalar*np.dot(S,rotation))
-
-    
-    
-    rotation_list=np.zeros((n_iterations,d,d)) #.astype(np.float64)
-    scalar_list=np.zeros((n_iterations)) #.astype(np.float64)
-    beta_list=np.zeros((n_iterations,d)) #.astype(np.float64)
-    T_hat=np.dot(S,rotation)*scalar+beta
-    
-    # #Lx_hat_org=arange(0,n)
-    
-    for i in range(n_iterations):
-#        print('i',i)
-        M=cost_matrix_d(T_hat,T)
-        argmin_T=closest_y_M(M)
-        T_take=T[argmin_T]
-        T_hat=T_take
-        rotation,scalar_d=recover_rotation_du(T_hat,S)
-        scalar=np.mean(scalar_d)
-        beta=vec_mean(T_hat)-vec_mean(scalar*S.dot(rotation))
-        T_hat=S.dot(rotation)*scalar+beta
-        
-        #move Xhat         
-        rotation_list[i]=rotation
-        scalar_list[i]=scalar
-        beta_list[i]=beta
-
-    return rotation_list,scalar_list,beta_list  
-
-
-
-@nb.njit(['Tuple((float64[:,:,:],float64[:],float64[:,:]))(float64[:,:],float64[:,:],int64)'])
-def icp_umeyama(S,T,n_iterations):
-    '''
-    Parameters: 
-    ------
-    S: (n,d) numpy array, float64
-        source data 
-    T: (n,d) numpy array, float64
-        target data
-        
-    
-    n_iterations: int64
-        total number of iterations
-
-    
-    Returns: 
-    -----
-    rotation_list: (n_iterations,d,d) numpy array, float64
-                  list of rotation matrices in all iterations
-    scalar_list: (n_iterations,) numpy array, float64
-                  list of scaling parameters in all interations
-    beta_list: (n_iterations,d) numpy arrayy, float64 
-                  list of translation parameters in all interations 
-                      
-    '''
-        
-    n,d=S.shape
-
-    # initlize 
-    rotation=np.eye(d) #,dtype=np.float64)
-    scalar=1.0 #nb.float64(1.0) #
-    beta=vec_mean(T)-vec_mean(scalar*S.dot(rotation))
-    # paramlist=[]
-    rotation_list=np.zeros((n_iterations,d,d)) #.astype(np.float64)
-    scalar_list=np.zeros((n_iterations)) #.astype(np.float64)
-    beta_list=np.zeros((n_iterations,d)) #.astype(np.float64)
-    T_hat=S.dot(rotation)*scalar+beta
-    
-
-    
-    for i in range(n_iterations):
-#        print('i',i)
-       # print(i)
-        M=cost_matrix_d(T_hat,T)
-        argmin_T=closest_y_M(M)
-        T_take=T[argmin_T]
-        T_hat=T_take
-        rotation,scalar=recover_rotation(T_hat,S)
-        #scalar=np.mean(scalar_d)
-        beta=vec_mean(T_hat)-vec_mean(scalar*S.dot(rotation))
-        X_hat=S.dot(rotation)*scalar+beta
-        
-        #move That         
-        rotation_list[i]=rotation
-        scalar_list[i]=scalar
-        beta_list[i]=beta
-
-    return rotation_list,scalar_list,beta_list  
 
 
 
@@ -1428,9 +1199,7 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         else:
             # find optimal R,S,beta, conditonal on alpha    
             Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            print('here')
             R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
-            print('here2')
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
             B=np.vstack((beta,R))
 
@@ -1439,6 +1208,6 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         if epoch in record_index:
             B_list.append(B),alpha_list.append(alpha)
         epoch+=1
-        #print(epoch)
+        print('%i/%i'%(epoch,n_iteration), end='\r')
     return (B_list,alpha_list,Phi),record_index
 
