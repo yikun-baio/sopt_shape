@@ -1104,3 +1104,48 @@ def OPT_TPS(X,Y,N0,eps=3.0,n_iteration=200,record_index=[],start_epoch=None,thre
         
     return (B_list,alpha_list,Phi),record_index
 
+
+def TPS_RPM(X,Y,Lambda,eps=3.0,reg=0.001,n_iteration=200,record_index=[],**kwargs):
+    N1,D=X.shape
+    C=X.copy()
+    Phi=kernel_matrix_TPS(C,X,D=2)
+    X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+    # initlize 
+    R=np.eye(D)
+    beta,alpha=np.mean(Y,0)-np.mean(X.dot(R),0),np.zeros((C.shape[0],D))
+    B=np.vstack((beta,R))
+    Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta 
+    epoch=0
+    mu,nu=np.ones(Yhat.shape[0]),np.ones(Y.shape[0])
+    alpha_list,B_list=list(),list()
+
+    if len(record_index)==0:
+        record_index=np.unique(np.linspace(0,n_iteration-1,num=int(n_iteration/10)).astype(np.int64))
+    
+
+    while epoch<n_iteration:
+        print('current, %i/%i'%(epoch,n_iteration),end='\r')
+        B_pre=B.copy()
+        M=cost_matrix_d(Yhat,Y)
+        gamma=sinkhorn_knopp_opt(mu, nu, M, Lambda, reg, numItermax=1000)
+        p1_hat=np.sum(gamma,1)
+        Domain=p1_hat>1e-10
+        BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
+        Yhat[Domain]=BaryP
+        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
+            alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
+        else:
+            # find optimal R,S,beta, conditonal on alpha    
+            Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
+            beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+            B=np.vstack((beta,R))
+
+        Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
+
+        if epoch in record_index:
+            B_list.append(B),alpha_list.append(alpha)
+        epoch+=1
+        
+    return (B_list,alpha_list,Phi),record_index
+
