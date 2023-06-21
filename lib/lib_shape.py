@@ -1049,10 +1049,9 @@ def OPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_iteration=200,record_index=[
             beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
 
         Yhat=Phi.dot(alpha)+X.dot(R)+beta
-
-        epoch+=1
         if epoch in record_index:
             R_list.append(R),beta_list.append(beta),alpha_list.append(alpha)
+        epoch+=1
     return (R_list,beta_list,alpha_list,Phi),record_index
 
     
