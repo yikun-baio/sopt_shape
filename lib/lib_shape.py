@@ -1148,3 +1148,57 @@ def TPS_RPM(X,Y,Lambda,eps=3.0,reg=0.001,n_iteration=200,record_index=[],**kwarg
         
     return (B_list,alpha_list,Phi),record_index
 
+
+
+def model_to_Yhat(model_list,X,model='RBF'):
+    Yhat_list=list()
+    N0=X.shape[0]
+    if model=='RBF':
+        R_list,beta_list,alpha_list,Phi=model_list
+        Phi=Phi[0:N0]
+        n_iteration=len(alpha_list)
+        for epoch, (R,beta,alpha) in enumerate(zip(R_list,beta_list,alpha_list)):
+          Yhat=Phi.dot(alpha)+X.dot(R)+beta
+          Yhat_list.append(Yhat)
+
+    if model=='TPS':
+        X_bar=np.hstack((np.ones((X.shape[0],1)),X))
+        B_list,alpha_list,Phi=model_list
+        Phi=Phi[0:N0]
+        n_iteration=len(alpha_list)
+        for epoch,(B,alpha) in enumerate(zip(B_list,alpha_list)):
+            Yhat=Phi.dot(alpha)+X_bar.dot(B)
+            Yhat_list.append(Yhat)
+    return Yhat_list
+
+
+
+def make_plot(X,Y,file_name=None):
+  fig = plt.figure(figsize=(2*800/72,800/72))
+  ax = fig.add_subplot(projection='3d')
+  x=X[:,0]
+  y=X[:,1]
+  z=X[:,2]
+  ax.scatter3D(X[:,0], X[:,2], X[:,1], s=0.5,c='r',alpha=0.5) #=X[:,1]*np.sqrt(X[:,0]**2+X[:,2]**2), cmap='bone')
+
+  ax.scatter3D(Y[:,0], Y[:,2], Y[:,1], s=0.5,c='b',alpha=0.5) #Y[:,1]*np.sqrt(Y[:,0]**2+Y[:,2]**2), cmap='bone')
+
+  ax.set_xlim([-1,1]);ax.set_ylim([-1,1]);ax.set_zlim([-1,1])
+  ax.view_init(10, 45)
+  if file_name!=None:
+      plt.savefig(file_name,dpi=200)
+  plt.show()
+
+def visual_3D(Yhat_list,Y,path,record_index):
+  for (Yhat,index) in zip(Yhat_list,record_index):
+    file_name=path+'_'+str(index)+'.pdf'
+    make_plot(Yhat,Y,file_name)
+
+def compute_error(model_list,X,Y,permutation,model):
+    Yhat_list=model_to_Yhat(model_list,X,model=model)
+    N0=X.shape[0]
+    std=np.sqrt(np.sum(Y.std(0)**2))
+    error_list=np.zeros(N0)
+    for (i,Yhat) in enumerate(Yhat_list):
+        error_list[i]=np.sum(((Yhat-Y[permutation])/std)**2)/Y.shape[0]
+    return error_list
