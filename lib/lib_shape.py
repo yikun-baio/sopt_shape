@@ -923,18 +923,19 @@ def SOPT_RBF(X,Y,N0,kernel=['Gaussian',[],0.1,3.0],n_projection=100,n_iteration=
 
         # find optimal R,S,beta, conditonal on alpha
         Y_prime2=Yhat[domain_sum]-Phi[domain_sum].dot(alpha)
+        R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
+        beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
+            
 
         # update Yhat by R,beta
 
         if epoch>=start_epoch and np.linalg.norm(R-R_pre)+np.linalg.norm(beta-beta_pre)<threshold:
-            R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
-            beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
             Y_prime=Yhat[domain_sum]-X[domain_sum].dot(R)-beta
             alpha=recover_alpha_gpu(Phi[domain_sum],Y_prime,eps,**kwargs)
             Yhat=Phi.dot(alpha)+X.dot(R)+beta
-        else:
-            R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
-            beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
+        # else:
+        #     R,S=recover_rotation_gpu(Y_prime2,X[domain_sum],**kwargs)
+        #     beta=vec_mean(Y_prime2)-vec_mean(X[domain_sum].dot(R)) 
             
         Yhat=Phi.dot(alpha)+X.dot(R)+beta    
         if epoch in record_index:

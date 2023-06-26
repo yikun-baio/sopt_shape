@@ -834,3 +834,17 @@ result/3D_male_0.05/SOPT_GD_error.pt
 result/3D_male_0.05/SOPT_RBF_error.pt
 result/3D_male_0.05/SOPT_TPS_error.pt
 result/3D_male_0.10/SOPT_GD_error.pt
+result/3D_female_19_2_0.05/OPT_RBF.pt
+result/3D_female_19_2_0.05/OPT_TPS.pt
+result/3D_female_19_2_0.05/SOPT_GD.pt
+result/3D_female_19_2_0.05/SOPT_RBF.pt
+result/3D_female_19_2_0.05/SOPT_TPS.pt
+result/3D_female_19_2_0.10/OPT_RBF.pt
+result/3D_female_19_2_0.10/OPT_TPS.pt
+result/3D_female_19_2_0.10/SOPT_GD.pt
+result/3D_female_19_2_0.10/SOPT_RBF.pt
+result/3D_female_19_2_0.10/SOPT_TPS.pt
+result/3D_male_0.05/SOPT_GD_error.pt
+result/3D_male_0.05/SOPT_RBF_error.pt
+result/3D_male_0.05/SOPT_GD_error.pt
+result/3D_male_0.05/SOPT_RBF_error.pt
