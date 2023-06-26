@@ -34,6 +34,65 @@ p=2  # global variable, the ground cost is (x-y)**p
 
 #@nb.njit(nb.types.Tuple((nb.float64,nb.int64[:]))(nb.float64[:],nb.float64[:],nb.float64))
 # solve opt by linear programming 
+
+
+
+
+def emd(a, b, M, numItermax=100000, numThreads=1,**kwargs):
+    # ensure float64
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    M = np.asarray(M, dtype=np.float64, order='C')
+
+    # if empty array given then use uniform distributions
+    if len(a) == 0:
+        a = np.ones((M.shape[0],), dtype=np.float64) / M.shape[0]
+    if len(b) == 0:
+        b = np.ones((M.shape[1],), dtype=np.float64) / M.shape[1]
+
+    assert (a.shape[0] == M.shape[0] and b.shape[0] == M.shape[1]), \
+        "Dimension mismatch, check dimensions of M with a and b"
+
+    # ensure that same mass
+    np.testing.assert_almost_equal(a.sum(0),
+                                   b.sum(0), err_msg='a and b vector must have the same sum')
+    b = b * a.sum() / b.sum()
+
+    asel = a != 0
+    bsel = b != 0
+
+    numThreads = check_number_threads(numThreads)
+
+    G, cost, u, v, result_code = emd_c(a, b, M, numItermax, numThreads)
+
+
+
+    result_code_string = check_result(result_code)
+
+    return G
+
+
+def check_number_threads(numThreads):
+    """Checks whether or not the requested number of threads has a valid value.
+
+    Parameters
+    ----------
+    numThreads : int or str
+        The requested number of threads, should either be a strictly positive integer or "max" or None
+
+    Returns
+    -------
+    numThreads : int
+        Corrected number of threads
+    """
+    if (numThreads is None) or (isinstance(numThreads, str) and numThreads.lower() == 'max'):
+        return -1
+    if (not isinstance(numThreads, int)) or numThreads < 1:
+        raise ValueError('numThreads should either be "max" or a strictly positive integer')
+    return numThreads
+
+
+
  
 @nb.njit(cache=True)
 def argmin_nb(array):
@@ -262,7 +321,7 @@ def opt_lp(mu,nu,M,Lambda,numItermax=100000,numThreads=1):
     M1[0:n,0:m]=M-2*Lambda
     # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
     # result_code_string = check_result(result_code)
-    plan1=ot.lp.emd(mu1,nu1,M1,numItermax=numItermax,numThreads=numThreads)
+    plan1=emd(mu1,nu1,M1,numItermax=numItermax,numThreads=numThreads)
     plan=plan1[0:n,0:m]
     cost=np.sum(M*plan)
     return cost,plan
@@ -508,6 +567,120 @@ def sinkhorn_knopp(mu, nu, M, reg, numItermax=1000000):
     gamma=np.expand_dims(u,1)*(K*v.T)
 
     return gamma
+
+
+
+def opt_pr(mu, nu, M, mass, **kwargs):
+    """
+    Solves the partial optimal transport problem for the quadratic cost
+    and returns the OT plan
+
+    The function considers the following problem:
+
+    .. math::
+        \gamma = \mathop{\arg \min}_\gamma \quad \langle \gamma, \mathbf{M} \rangle_F
+
+    .. math::
+        s.t. \ \gamma \mathbf{1} &\leq \mathbf{a}
+
+             \gamma^T \mathbf{1} &\leq \mathbf{b}
+
+             \gamma &\geq 0
+
+             \mathbf{1}^T \gamma^T \mathbf{1} = m &\leq \min\{\|\mathbf{a}\|_1, \|\mathbf{b}\|_1\}
+
+
+    where :
+
+    - :math:`\mathbf{M}` is the metric cost matrix
+    - :math:`\mathbf{a}` and :math:`\mathbf{b}` are source and target unbalanced distributions
+    - `m` is the amount of mass to be transported
+
+    Parameters
+    ----------
+    a : np.ndarray (dim_a,)
+        Unnormalized histogram of dimension `dim_a`
+    b : np.ndarray (dim_b,)
+        Unnormalized histograms of dimension `dim_b`
+    M : np.ndarray (dim_a, dim_b)
+        cost matrix for the quadratic cost
+    m : float, optional
+        amount of mass to be transported
+    nb_dummies : int, optional, default:1
+        number of reservoir points to be added (to avoid numerical
+        instabilities, increase its value if an error is raised)
+    log : bool, optional
+        record log if True
+    **kwargs : dict
+        parameters can be directly passed to the emd solver
+
+
+    .. warning::
+        When dealing with a large number of points, the EMD solver may face
+        some instabilities, especially when the mass associated to the dummy
+        point is large. To avoid them, increase the number of dummy points
+        (allows a smoother repartition of the mass over the points).
+
+
+    Returns
+    -------
+    gamma : (dim_a, dim_b) ndarray
+        Optimal transportation matrix for the given parameters
+    log : dict
+        log dictionary returned only if `log` is `True`
+
+
+    Examples
+    --------
+
+    >>> import ot
+    >>> a = [.1, .2]
+    >>> b = [.1, .1]
+    >>> M = [[0., 1.], [2., 3.]]
+    >>> np.round(partial_wasserstein(a,b,M), 2)
+    array([[0.1, 0. ],
+           [0. , 0.1]])
+    >>> np.round(partial_wasserstein(a,b,M,m=0.1), 2)
+    array([[0.1, 0. ],
+           [0. , 0. ]])
+
+    References
+    ----------
+    ..  [28] Caffarelli, L. A., & McCann, R. J. (2010) Free boundaries in
+        optimal transport and Monge-Ampere obstacle problems. Annals of
+        mathematics, 673-730.
+    ..  [29] Chapel, L., Alaya, M., Gasso, G. (2020). "Partial Optimal
+        Transport with Applications on Positive-Unlabeled Learning".
+        NeurIPS.
+
+    See Also
+    --------
+    ot.partial.partial_wasserstein_lagrange: Partial Wasserstein with
+    regularization on the marginals
+    ot.partial.entropic_partial_wasserstein: Partial Wasserstein with a
+    entropic regularization parameter
+    """
+    
+    Lambda,A=1.0,1.0
+    n,m=M.shape 
+    mu1,nu1=np.zeros(n+1),np.zeros(m+1)
+    mu1[0:n],nu1[0:m]=mu,nu
+    mu1[-1],nu1[-1]=np.sum(nu)-mass,np.sum(mu)-mass
+    M1=np.zeros((n+1,m+1),dtype=np.float64)
+    M1[0:n,0:m]=M
+    M1[:,m],M1[n,:]=Lambda,Lambda
+    M1[n,m]=2*Lambda+A
+
+
+
+    # plan1, cost1, u, v, result_code = emd_c(mu1, nu1, M1, numItermax, numThreads)
+    # result_code_string = check_result(result_code)
+    gamma1=emd(mu1,nu1,M1,**kwargs)
+    gamma=gamma1[0:n,0:m]
+    cost=np.sum(M*gamma)
+
+    return cost,gamma
+
 
 @nb.njit(['(float64[:,:])(float64[:],float64[:],float64[:,:],float64,float64,int64)'],cache=True)
 def sinkhorn_knopp_opt(mu, nu, M, Lambda, reg, numItermax=1000):
