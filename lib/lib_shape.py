@@ -1132,14 +1132,14 @@ def TPS_RPM(X,Y,Lambda,eps=3.0,reg=0.001,n_iteration=200,record_index=[],**kwarg
         Domain=p1_hat>1e-10
         BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
         Yhat[Domain]=BaryP
-        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
-            alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
-        else:
-            # find optimal R,S,beta, conditonal on alpha    
-            Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
-            beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
-            B=np.vstack((beta,R))
+        # if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
+        alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
+        # else:
+        #     # find optimal R,S,beta, conditonal on alpha    
+        #     Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+        #     R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
+        #     beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+        #     B=np.vstack((beta,R))
 
         Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
 
@@ -1176,14 +1176,14 @@ def TPS_RPM_pr(X,Y,N0,eps=3.0,reg=0.001,n_iteration=200,record_index=[],**kwargs
         Domain=p1_hat>1e-10
         BaryP=gamma.dot(Y)[Domain]/np.expand_dims(p1_hat,1)[Domain]
         Yhat[Domain]=BaryP
-        if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
-            alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
-        else:
-            # find optimal R,S,beta, conditonal on alpha    
-            Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
-            R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
-            beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
-            B=np.vstack((beta,R))
+        # if epoch>=start_epoch and np.linalg.norm(B-B_pre)<threshold:
+        alpha,B=TPS_recover_parameter_gpu(Phi,X_bar,Yhat,eps,**kwargs)
+        # else:
+        #     # find optimal R,S,beta, conditonal on alpha    
+        #     Y_prime2=Yhat[Domain]-Phi[Domain].dot(alpha)
+        #     R,S=recover_rotation_gpu(Y_prime2,X[Domain],**kwargs)
+        #     beta=vec_mean(Y_prime2)-vec_mean(X[Domain].dot(R))
+        #     B=np.vstack((beta,R))
 
         Yhat=Phi.dot(alpha)+X_bar.dot(B) #Phi.dot(alpha)+X.dot(R)+beta  
 
