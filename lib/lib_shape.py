@@ -1238,10 +1238,14 @@ def visual_3D(Yhat_list,Y,path,record_index):
     make_plot(Yhat,Y,file_name)
 
 def compute_error(model_list,X,Y,permutation,model):
-    Yhat_list=model_to_Yhat(model_list,X,model=model)
     N0=X.shape[0]
+    n_iteration=len(model_list[0])
     std=np.sqrt(np.sum(Y.std(0)**2))
-    error_list=np.zeros(N0)
+    error_list=np.zeros(n_iteration)
+    Yhat_list=model_to_Yhat(model_list,X,model=model)
+    Yhat=Yhat_list[-1]
     for (i,Yhat) in enumerate(Yhat_list):
         error_list[i]=np.sum(((Yhat-Y[permutation])/std)**2)/Y.shape[0]
+    make_plot(Yhat,Y)
+    # print(error_list[i])
     return error_list
