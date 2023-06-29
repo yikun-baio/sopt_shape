@@ -1121,7 +1121,6 @@ def TPS_RPM(X,Y,Lambda,eps=3.0,reg=0.001,n_iteration=200,record_index=[],**kwarg
 
     if len(record_index)==0:
         record_index=np.unique(np.linspace(0,n_iteration-1,num=int(n_iteration/10)).astype(np.int64))
-    
 
     while epoch<n_iteration:
         print('current, %i/%i'%(epoch,n_iteration),end='\r')
