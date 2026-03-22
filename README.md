@@ -1,4 +1,6 @@
-# Partial Optimal Transport Registration
+# Partial Transport for Point-Cloud Registration 
+
+Paper: https://arxiv.org/pdf/2309.15787 
 
 This repository provides example code for non-linear point-cloud registration using partial optimal transport. The code demonstrates both 3D and 2D numerical examples as described in the accompanying paper. The implementation is done using Python, numpy, torch, and scipy, without the need for any specialized dependencies.
 
