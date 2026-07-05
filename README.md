@@ -2,7 +2,7 @@
 
 This repository contains code and experiments for the paper [Partial Transport for Point-Cloud Registration](https://arxiv.org/abs/2309.15787). The project studies non-rigid point-cloud registration with optimal partial transport (OPT) and sliced optimal partial transport (SOPT), especially when source and target point clouds contain noise, outliers, or missing/extra points.
 
-![Point-cloud registration examples](assets/registration_overview.png)
+![Point-cloud registration example](assets/registration_example.png)
 
 The main contribution implemented here is a family of OPT/SOPT-based non-rigid registration methods using RBF and TPS deformation models. The repository also includes balanced OT/SOT variants and classical baselines for comparison.
 
@@ -15,9 +15,32 @@ conda env create -f environment.yml
 conda activate sopt-shape
 ```
 
-The environment is intentionally small. The core packages are PyTorch, NumPy, Numba, and POT/PythonOT (`import ot`). The YAML also includes SciPy because several OT/registration utilities call it directly, Matplotlib because the library files import plotting utilities, and `notebook/ipykernel` for running the experiment notebooks.
+The environment installs the packages used by the Python modules and notebooks: PyTorch, NumPy, SciPy, Numba, Matplotlib, POT/PythonOT (`import ot`), Jupyter Notebook, Pillow, and Celluloid for animation cells.
 
 ## Repository Structure
+
+```text
+sopt_shape/
+├── lib/                      # Core library
+│   ├── lib_shape.py          # Proposed OPT/SOPT registration methods (+ OT/SOT baselines)
+│   ├── lib_ot.py             # OT/OPT solvers (EMD, Sinkhorn, partial OT, 1D OPT, sliced OPT)
+│   ├── sliced_opt.py         # Sliced OT/OPT projection + correspondence recovery
+│   ├── library.py            # Shared numerics, cost matrices, Gaussian-mixture sampling
+│   ├── cpd.py                # Coherent Point Drift (CPD) baseline
+│   ├── icp_ffd.py            # ICP + Free-Form Deformation (ICP-FFD) baseline
+│   ├── fish.py               # Fish-shape data transforms, noise, subsampling
+│   └── tools.py              # Small project helpers
+├── opt1d.cpp                 # C++ support for 1D optimal partial transport
+├── 2D_experiment.ipynb       # 2D fish registration experiments
+├── 3D-experiment.ipynb       # 3D point-cloud registration experiments
+├── OT_fish_example.ipynb     # Compact fish-shape OT/OPT example
+├── data_generate.ipynb       # Data construction and noise generation
+├── data/                     # Prepared point-cloud datasets used by the notebooks
+├── results/                  # Generated experiment outputs and figures
+├── assets/                   # README figures
+├── environment.yml           # Conda environment definition
+└── README.md
+```
 
 ### Our Method
 
@@ -55,7 +78,7 @@ The environment is intentionally small. The core packages are PyTorch, NumPy, Nu
 - `data_generate.ipynb`: data construction and noise generation.
 - `data/`: prepared point-cloud datasets used by the notebooks.
 - `results/`: generated or saved experiment outputs and figures.
-- `assets/registration_overview.png`: README figure copied from the arXiv source package for the paper.
+- `assets/registration_example.png`: README figure extracted from the saved 3D experiment notebook output.
 
 ## Running Experiments
 
@@ -81,11 +104,15 @@ Some notebook cells save intermediate models and figures into `results/`. If you
 If this code is useful for your work, please cite the paper:
 
 ```bibtex
-@article{bai2023partial,
-  title={Partial Transport for Point-Cloud Registration},
-  author={Bai, Yikun and Tran, Huy and Damelin, Steven B. and Kolouri, Soheil},
-  journal={arXiv preprint arXiv:2309.15787},
-  year={2023}
+@article{bai2025partial,
+  title={PARTIAL TRANSPORT FOR POINT-CLOUD REGISTRATION},
+  author={BAI, Y and TRAN, H and DAMELIN, SB and KOLOURI, S},
+  journal={SAMPLING THEORY, SIGNAL PROCESSING, AND DATA ANALYSIS},
+  volume={23},
+  number={1},
+  pages={4},
+  year={2025},
+  publisher={Birkhauser}
 }
 ```
 

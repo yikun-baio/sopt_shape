@@ -13,3 +13,7 @@ dependencies:
   - pot
   - notebook
   - ipykernel
+  - pillow
+  - pip
+  - pip:
+      - celluloid

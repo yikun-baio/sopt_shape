@@ -1139,14 +1139,14 @@ def opt1d(X,Y,lam): #,verbose=False):
                     # catch: empty rows in between that could numerically be skipped
                     if iMin>0:
                         if piRow[iMin-1]==-1:
-                            lowEndDiff=np.infty
+                            lowEndDiff=np.inf
                 else:
-                    lowEndDiff=np.infty
+                    lowEndDiff=np.inf
                 # threshold for upper end
                 if j<m-1:
                     hiEndDiff=(X[K]-Y[j+1])**p-phi[K]-psi[j+1]-v
                 else:
-                    hiEndDiff=np.infty
+                    hiEndDiff=np.inf
                 if hiEndDiff<=min((lowEndDiff,lamDiff)):
                  #  if verbose: print("case 3.2")
                     v+=hiEndDiff
@@ -1282,14 +1282,14 @@ def opt1d_1(X,Y,lam,dtype=np.float64): #,verbose=False):
                     # catch: empty rows in between that could numerically be skipped
                     if iMin>0:
                         if piRow[iMin-1]==-1:
-                            lowEndDiff=np.infty
+                            lowEndDiff=np.inf
                 else:
-                    lowEndDiff=np.float32(np.infty)
+                    lowEndDiff=np.float32(np.inf)
                 # threshold for upper end
                 if j<m-1:
                     hiEndDiff=(X[K]-Y[j+1])**p-phi[K]-psi[j+1]-v
                 else:
-                    hiEndDiff=np.float32(np.infty)
+                    hiEndDiff=np.float32(np.inf)
                 if hiEndDiff<=min((lowEndDiff,lamDiff)):
                  #  if verbose: print("case 3.2")
                     v+=hiEndDiff
