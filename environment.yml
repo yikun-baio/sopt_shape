@@ -1,0 +1,15 @@
+name: sopt-shape
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - numba
+  - matplotlib
+  - pytorch
+  - pot
+  - notebook
+  - ipykernel
