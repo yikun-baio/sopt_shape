@@ -1,3 +1,5 @@
+
+
 # Partial Transport for Point-Cloud Registration
 
 This repository contains code and experiments for the paper [Partial Transport for Point-Cloud Registration](https://arxiv.org/abs/2309.15787). The project studies non-rigid point-cloud registration with optimal partial transport (OPT) and sliced optimal partial transport (SOPT), especially when source and target point clouds contain noise, outliers, or missing/extra points.
@@ -15,7 +17,7 @@ conda env create -f environment.yml
 conda activate sopt-shape
 ```
 
-The environment installs the packages used by the Python modules and notebooks: PyTorch, NumPy, SciPy, Numba, Matplotlib, POT/PythonOT (`import ot`), Jupyter Notebook, Pillow, and Celluloid for animation cells.
+The environment installs the packages used by the Python modules and notebooks: PyTorch, NumPy, SciPy, Numba, Matplotlib, POT/PythonOT (`import ot`), Jupyter Notebook, IPyKernel, Pillow, and Celluloid for animation cells.
 
 ## Repository Structure
 
